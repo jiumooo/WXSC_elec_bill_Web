@@ -66,6 +66,22 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/* 取数失败时把「数据通道」展开并聚焦中转地址，省掉用户自己翻设置 */
+function revealChannel(err) {
+  const msg = String((err && err.message) || err || '');
+  const isNetwork = /网络请求失败|Failed to fetch|NetworkError|Load failed|CORS/i.test(msg);
+  if (!isNetwork) return;
+  const details = $('card-channel');
+  if (details && 'open' in details) details.open = true;
+  const mode = $('in-mode');
+  if (mode && api.getChannel().mode === 'direct') mode.value = 'relay';
+  const relay = $('in-relay');
+  const field = relay && relay.closest ? relay.closest('.field') : null;
+  if (field) field.hidden = false;
+  if (details && details.scrollIntoView) details.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (relay && relay.focus) setTimeout(() => relay.focus(), 260);
+}
+
 function fixed(v, digits = 2) {
   return num(v).toFixed(digits);
 }
@@ -300,6 +316,7 @@ async function loadBalance(options = {}) {
     S.balance = null;
     renderBalance();
     toast('取余额失败：' + (err && err.message ? err.message : err), 4200);
+    revealChannel(err);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '刷新余额'; }
   }
@@ -320,6 +337,7 @@ async function runQuery(options = {}) {
     else toast('共 ' + S.items.length + ' 笔，' + S.summary.length + ' 个账号', 2000);
   } catch (err) {
     toast('查询失败：' + (err && err.message ? err.message : err), 4600);
+    revealChannel(err);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '查询'; }
   }
@@ -395,6 +413,7 @@ async function saveRoom(event) {
     renderChips();
     renderBalance();
     toast(err && err.message ? err.message : String(err), 5200);
+    revealChannel(err);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '保存并重新解析'; }
   }
