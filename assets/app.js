@@ -304,13 +304,51 @@ function applyItems() {
   renderData();
 }
 
+function enrollYear() {
+  const raw = String(store.get(KEY.enroll, '') || '').trim();
+  return /^\d{4}$/.test(raw) ? raw : '';
+}
+
+function enrollRange() {
+  const y = enrollYear();
+  return y ? api.yearStart(Number(y)) : null;
+}
+
+function syncRangeButtons() {
+  const active = String(store.get(KEY.range, '') || '');
+  document.querySelectorAll('[data-range]').forEach((b) => {
+    const on = b.dataset.range === active;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
 function setRange(kind) {
+  if (kind === 'enroll') {
+    const r = enrollRange();
+    if (!r) {
+      toast('先填入学年份（例如 2022），再点「开学至今」', 4600);
+      openDrawer('room');
+      const box = $('in-enroll2');
+      if (box) { box.focus(); if (box.select) box.select(); }
+      return;
+    }
+    $('in-start').value = r.start;
+    $('in-end').value = r.end;
+    rangeFromInputs();
+    store.set(KEY.range, 'enroll');
+    applyItems();
+    syncRangeButtons();
+    toast('已按 ' + enrollYear() + ' 年 9 月入学查到今天');
+    return;
+  }
   const r = api.quickRange(kind);
   $('in-start').value = r.start;
   $('in-end').value = r.end;
   rangeFromInputs();
   store.set(KEY.range, kind);
   applyItems();
+  syncRangeButtons();
 }
 
 async function loadBalance(options = {}) {
@@ -674,16 +712,29 @@ function openDrawer(which) {
   if (title) title.textContent = which === 'channel' ? '中转通道' : '房间设置';
   drawer.hidden = false;
   drawer.setAttribute('aria-hidden', 'false');
-  if (scrim) scrim.hidden = false;
-  document.body.classList.add('no-scroll');
+  syncScrim();
 }
 
 function closeDrawer() {
   const drawer = $('drawer');
   const scrim = $('scrim');
   if (drawer) { drawer.hidden = true; drawer.setAttribute('aria-hidden', 'true'); }
-  if (scrim) scrim.hidden = true;
-  document.body.classList.remove('no-scroll');
+  syncScrim();
+}
+
+// 弹窗（引导 / 导出预览）也要压暗背景；任一弹窗还开着就别收起遮罩
+function syncScrim() {
+  const scrim = $('scrim');
+  if (!scrim) return;
+  const drawer = $('drawer');
+  const drawerOpen = !!(drawer && !drawer.hidden);
+  const pv = $('pv');
+  const pvOpen = !!(pv && !pv.hidden);
+  const guide = $('guide');
+  const guideOpen_ = !!(guide && !guide.hidden);
+  const any = drawerOpen || pvOpen || guideOpen_;
+  scrim.hidden = !any;
+  document.body.classList.toggle('no-scroll', any);
 }
 
 /* ------------------------------------------------------------------ 导出（先预览再下载） */
@@ -766,13 +817,13 @@ function openPreview(kind) {
   if (ok) ok.textContent = kind === 'xlsx' ? '确认导出 Excel' : '确认导出 Markdown';
   const pv = $('pv');
   if (pv) pv.hidden = false;
-  document.body.classList.add('no-scroll');
+  syncScrim();
 }
 
 function closePreview() {
   const pv = $('pv');
   if (pv) pv.hidden = true;
-  document.body.classList.remove('no-scroll');
+  syncScrim();
 }
 
 function doExport() {
@@ -793,14 +844,14 @@ function guideOpen() {
   const box = $('guide');
   if (!box) return;
   box.hidden = false;
-  document.body.classList.add('no-scroll');
+  syncScrim();
   guideGo(1);
 }
 
 function guideClose(markDone) {
   const box = $('guide');
   if (box) box.hidden = true;
-  document.body.classList.remove('no-scroll');
+  syncScrim();
   if (markDone) store.set(KEY.guide, { done: 1, at: Date.now() });
 }
 
@@ -883,11 +934,14 @@ async function guidePickLoudong(n) {
 function applyEnrollYear(year) {
   const r = api.yearStart(year);
   G.year = year ? String(r.year) : '';
+  const e2 = $('in-enroll2');
   if (year) {
     store.set(KEY.enroll, G.year);
+    if (e2) e2.value = G.year;
     $('in-start').value = r.start;
     $('in-end').value = r.end;
   } else {
+    if (e2) e2.value = '';
     $('in-start').value = '';
     $('in-end').value = '';
   }
@@ -1012,6 +1066,24 @@ function bind() {
   document.querySelectorAll('[data-range]').forEach((btn) => {
     btn.addEventListener('click', () => setRange(btn.dataset.range));
   });
+  syncRangeButtons();
+
+  const e2 = $('in-enroll2');
+  if (e2) {
+    e2.addEventListener('change', () => {
+      const raw = String(e2.value || '').trim();
+      if (!/^\d{4}$/.test(raw)) {
+        store.set(KEY.enroll, '');
+        toast('入学年份填 4 位数，例如 2022', 3600);
+        return;
+      }
+      store.set(KEY.enroll, raw);
+      const gi = $('in-enroll');
+      if (gi) gi.value = raw;
+      toast('入学年份已保存：' + raw + ' 年 9 月');
+      if (store.get(KEY.range, '') === 'enroll') setRange('enroll');
+    });
+  }
 
   $('btn-refresh-room').addEventListener('click', () => loadBalance());
   $('btn-query').addEventListener('click', () => runQuery({ refetch: false }));
@@ -1026,7 +1098,12 @@ function bind() {
   const closeBtn = $('btn-close-drawer');
   if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
   const scrim = $('scrim');
-  if (scrim) scrim.addEventListener('click', closeDrawer);
+  if (scrim) scrim.addEventListener('click', () => {
+    const d = $('drawer');
+    if (d && !d.hidden) { closeDrawer(); return; }
+    const p = $('pv');
+    if (p && !p.hidden) { closePreview(); return; }
+  });
 
   // 导出预览
   const pvOk = $('pv-ok');
@@ -1238,8 +1315,13 @@ async function boot() {
   const qRange = params.get('range');
   if (qRange) store.set(KEY.range, qRange);
 
-  const kind = store.get(KEY.range, 'month');
-  const initial = api.quickRange(typeof kind === 'string' ? kind : 'month');
+  const e2init = $('in-enroll2');
+  if (e2init) e2init.value = enrollYear();
+
+  let kind = String(store.get(KEY.range, 'month') || 'month');
+  const er = kind === 'enroll' ? enrollRange() : null;
+  if (kind === 'enroll' && !er) { kind = 'month'; store.set(KEY.range, 'month'); }
+  const initial = er || api.quickRange(kind === 'enroll' ? 'month' : kind);
   $('in-start').value = initial.start;
   $('in-end').value = initial.end;
   rangeFromInputs();

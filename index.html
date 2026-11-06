@@ -240,27 +240,74 @@ body.no-scroll{overflow:hidden}
   vertical-align:-2px;margin-right:5px}
 @keyframes sp{to{transform:rotate(360deg)}}
 
+.bar .btn.on{border-color:var(--brand);color:var(--brand);background:var(--brand-soft);font-weight:550}
+
+/* ---------------- 平板 / 小笔记本 ---------------- */
+@media (max-width:760px){
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .field{flex:1 1 46%}
+  .stat .v{font-size:20px}
+  .topbar-inner{padding:12px 14px;gap:10px}
+}
+
+/* ---------------- 手机 ---------------- */
 @media (max-width:560px){
-  .wrap{padding:14px 12px 0}
-  .card{padding:14px}
-  h1{font-size:15.5px}
-  .sub{font-size:11.5px}
-  .field{flex:1 1 100%}
+  .wrap{padding:12px 12px 0}
+  .card{padding:13px 14px;margin-bottom:12px;border-radius:14px}
+  h1{font-size:15px}
+  .sub{font-size:11.5px;line-height:1.5}
+  .logo{width:30px;height:30px;border-radius:9px}
+  .field{flex:1 1 100%;min-width:0}
   .field-action{flex:1 1 100%}
-  .field-action .btn{width:100%}
-  .stat .v{font-size:19px}
+  .field-action .btn{width:100%;padding:11px 15px;font-size:14px}
+  input,select{font-size:16px;padding:10px 11px}   /* 16px 起，iOS 才不会聚焦时放大 */
+  label.f{font-size:12.5px}
+  .grid{gap:10px}
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat{padding:10px 11px;border-radius:10px}
+  .stat .k{font-size:11.5px}
+  .stat .v{font-size:18px}
+  .stat .v small{font-size:11px}
+  .bar{gap:8px}
+  .bar .btn{flex:1 1 auto;padding:9px 10px;font-size:13px}
   .room-bar .btn{width:100%}
   .cand{grid-template-columns:1fr}
   .cand>.btn{grid-column:1 / 2;grid-row:auto;width:100%;margin-top:4px}
   .roomlist-body{grid-template-columns:repeat(auto-fill,minmax(72px,1fr))}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+  .tab{flex:0 0 auto;padding:7px 13px}
+  .tabs-row{gap:10px}
   .tabs-actions{width:100%}
-  .tabs-actions .btn{flex:1 1 auto}
+  .tabs-actions .btn{flex:1 1 auto;padding:9px 10px}
+  .scroll{max-height:56vh;border-radius:10px}
+  table{font-size:12.5px}
+  th,td{padding:7px 9px}
+  .meta{font-size:12px;line-height:1.6}
+  .note-in{width:88px;font-size:14px}            /* 备注输入框也放大，避免 iOS 缩放 */
   .drawer{width:100%}
-  .modal{width:100%;max-height:calc(100% - 16px);top:auto;bottom:0;transform:translateX(-50%);
-    border-radius:16px 16px 0 0}
-  .modal-foot .btn{flex:1 1 auto}
-  .modal-note{width:100%;margin-right:0}
-  .head-actions{width:100%;justify-content:flex-start}
+  .drawer-body{padding:14px 14px 28px}
+  /* 弹窗（引导 / 导出预览）悬浮在页面中间，不再贴底 */
+  .modal{left:50%;top:50%;bottom:auto;transform:translate(-50%,-50%);
+    width:calc(100% - 20px);max-height:calc(100dvh - 32px);border-radius:16px}
+  .modal-head{padding:12px 14px}
+  .modal-body{padding:14px}
+  .modal-foot{padding:10px 14px}
+  .modal-foot .btn{flex:1 1 auto;padding:10px 12px}
+  .modal-note{width:100%;margin-right:0;font-size:11px}
+  .guide{width:calc(100% - 20px)}
+  .guide .modal-body{min-height:0}
+  .guide-dots{padding:8px 14px 0}
+  .gstep h4{font-size:14px}
+  .pv-scroll{max-height:min(46vh,340px)}
+  .head-actions{width:auto;justify-content:flex-end;gap:6px}
+  .head-actions .btn{padding:6px 10px;font-size:12px}
+  .footnote{font-size:11px;padding:4px 0 18px}
+  #toast{bottom:18px;max-width:90vw;font-size:12.5px;padding:9px 14px}
+}
+
+@media (max-width:380px){
+  .g4{grid-template-columns:1fr}
+  .tabs-actions .btn{flex:1 1 100%}
 }
     </style>
 </head>
@@ -277,7 +324,7 @@ body.no-scroll{overflow:hidden}
       </div>
     </div>
     <div class="head-actions">
-      <span class="chip" id="chip-version">v1.2.2</span>
+      <span class="chip" id="chip-version">v1.2.3</span>
       <button class="btn mini ghost" id="btn-open-room" type="button" title="楼栋号 / 房间号 / 校区 / 数据源">房间设置</button>
       <button class="btn mini ghost" id="btn-open-channel" type="button" title="取数通道与中转部署说明">中转通道</button>
     </div>
@@ -332,7 +379,7 @@ body.no-scroll{overflow:hidden}
       </div>
     </form>
     <div class="bar">
-      <button class="btn" type="button" data-range="month">本月</button>
+      <button class="btn" type="button" data-range="enroll" title="按入学年份的 9 月 1 日查到今天">开学至今</button>
       <button class="btn" type="button" data-range="30d">近 30 天</button>
       <button class="btn" type="button" data-range="year">今年</button>
       <button class="btn" type="button" data-range="all">全部</button>
@@ -374,7 +421,7 @@ body.no-scroll{overflow:hidden}
   </section>
 
   <div class="footnote">
-    <span id="foot-version">WXSC_elec_bill_Web v1.2.2</span>
+    <span id="foot-version">WXSC_elec_bill_Web v1.2.3</span>
     <span>·</span>
     <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
     <span>·</span>
@@ -417,6 +464,13 @@ body.no-scroll{overflow:hidden}
         选中房间就会自动查询。房间号只在所选楼栋内匹配（3 号楼 + 101 → 3 号楼 101 室）。
         设置只写入本机 localStorage，不会上传，也不会影响别人。
       </div>
+      <div class="row">
+        <div class="field">
+          <label class="f" for="in-enroll2">入学年份（用于「开学至今」）</label>
+          <input type="number" id="in-enroll2" inputmode="numeric" min="2000" max="2100" step="1" placeholder="例如 2022">
+        </div>
+      </div>
+      <div class="hint" id="enroll-note">填 4 位年份，点查询卡片的「开学至今」就会查这个年份 9 月 1 日到今天的全部充值（如 2022 → 2022-09-01 起）。</div>
       <details class="mini-details">
         <summary>高级：小区 / 校区 ID 与数据源</summary>
         <div class="row">

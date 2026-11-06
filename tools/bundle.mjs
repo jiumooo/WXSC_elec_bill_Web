@@ -73,8 +73,11 @@ async function main() {
   const css = await read('assets/style.css');
   const html = await read('index.html');
   const linkRe = /\s*<link rel="stylesheet" href="assets\/style\.css"\s*\/?>/;
+  const styleRe = /\n\s*<style>[\s\S]*?<\/style>/;
   const styleTag = `\n    <style>\n${css.trim()}\n    </style>`;
-  let next = linkRe.test(html) ? html.replace(linkRe, styleTag) : html;
+  let next = html;
+  if (linkRe.test(html)) next = html.replace(linkRe, styleTag);
+  else if (styleRe.test(html)) next = html.replace(styleRe, styleTag);
   next = next.replace(/\s*<script type="module" src="assets\/app\.js"><\/script>/, `
     <script>
       // 单文件加载 + 失败重试（Pages 偶发 403 时最多重试 4 次）
