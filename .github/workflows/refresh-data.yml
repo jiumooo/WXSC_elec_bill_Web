@@ -52,6 +52,9 @@ jobs:
       - name: Normalize
         run: node tools/normalize-data.mjs
 
+      - name: Build combined index
+        run: node tools/build-index.mjs
+
       - name: Commit if changed
         id: commit
         run: |

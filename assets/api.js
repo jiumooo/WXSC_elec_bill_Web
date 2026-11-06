@@ -384,39 +384,100 @@ export function shortRoomCode(fullRoom, loudongName) {
 }
 
 let metaCache = null;
-export function historyMeta(force) {
+
+// GitHub Pages 对同一 IP 的突发并发请求会短暂 403（CDN 限流），这里做退避重试
+async function fetchJsonRetry(path, tries = 3) {
+  let lastErr = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(path, { cache: 'force-cache' });
+      if (r.ok) return r.json();
+      lastErr = new Error('读不到 ' + path + '（HTTP ' + r.status + '）');
+      if (![403, 408, 425, 429, 500, 502, 503, 504].includes(r.status)) throw lastErr;
+    } catch (e) {
+      lastErr = e;
+    }
+    await new Promise((ok) => setTimeout(ok, 220 * Math.pow(2, i)));
+  }
+  throw lastErr || new Error('读不到 ' + path);
+}
+
+// data/index.json 是 meta + 每栋房间清单的合并文件：首屏只发 1 个请求，避开 Pages 限流
+let indexCache = null;
+export async function historyIndex(force) {
+  if (indexCache && !force) return indexCache;
+  try {
+    const data = await fetchJsonRetry(HISTORY_DIR + 'index.json');
+    indexCache = data;
+    return data;
+  } catch (e) {
+    indexCache = null;
+    throw e;
+  }
+}
+
+export async function historyMeta(force) {
   if (metaCache && !force) return Promise.resolve(metaCache);
-  return fetch(HISTORY_DIR + 'meta.json', { cache: force ? 'no-store' : 'force-cache' })
-    .then((r) => {
-      if (!r.ok) throw new Error('历史数据缺失（data/meta.json 读不到）');
-      return r.json();
-    })
-    .then((meta) => {
-      metaCache = meta;
-      return meta;
-    });
+  let data = null;
+  try {
+    const idx = await historyIndex(force);
+    data = {
+      version: idx.version,
+      cutoff: idx.cutoff,
+      timezone: idx.timezone,
+      xiaoquId: idx.xiaoquId,
+      datasource: idx.datasource,
+      rooms: idx.rooms,
+      records: idx.records,
+      loudongs: (idx.loudongs || []).map((l) => ({
+        no: l.no,
+        name: l.name,
+        rooms: l.rooms.length,
+        records: l.rooms.reduce((s, r) => s + (r[1] || 0), 0),
+      })),
+    };
+    metaCache = data;
+    return data;
+  } catch {}
+  data = await fetchJsonRetry(HISTORY_DIR + 'meta.json');
+  if (!data) throw new Error('历史数据缺失（data/meta.json 读不到）');
+  metaCache = data;
+  return data;
 }
 
 const loudongCache = new Map();
-export function historyLoudong(no, force) {
+export async function historyLoudong(no, force) {
   const key = String(no);
-  if (loudongCache.has(key) && !force) return Promise.resolve(loudongCache.get(key));
-  return fetch(HISTORY_DIR + 'loudong/' + key + '/index.json', { cache: force ? 'no-store' : 'force-cache' })
-    .then((r) => {
-      if (!r.ok) throw new Error('历史数据里没有「' + key + ' 号楼」');
-      return r.json();
-    })
-    .then((data) => {
+  if (loudongCache.has(key) && !force) return loudongCache.get(key);
+  try {
+    const idx = await historyIndex(force);
+    const hit = (idx.loudongs || []).find((l) => String(l.no) === key);
+    if (hit) {
+      const data = {
+        no: hit.no,
+        name: hit.name,
+        cutoff: idx.cutoff,
+        rooms: (hit.rooms || []).map(([short, records]) => ({
+          short,
+          room: key + short,
+          roomId: key + short,
+          records,
+        })),
+      };
       loudongCache.set(key, data);
       return data;
-    });
+    }
+  } catch {}
+  const data = await fetchJsonRetry(HISTORY_DIR + 'loudong/' + key + '/index.json');
+  if (!data) throw new Error('历史数据里没有「' + key + ' 号楼」');
+  loudongCache.set(key, data);
+  return data;
 }
 
 export function historyRoomFile(loudongNo, short) {
   const url = HISTORY_DIR + 'loudong/' + loudongNo + '/room-' + short + '.json';
-  return fetch(url, { cache: 'force-cache' }).then((r) => {
-    if (!r.ok) throw new Error('历史数据里没有 ' + loudongNo + ' 号楼 ' + short + ' 室（' + url + '）');
-    return r.json();
+  return fetchJsonRetry(url).catch(() => {
+    throw new Error('历史数据里没有 ' + loudongNo + ' 号楼 ' + short + ' 室（' + url + '）');
   });
 }
 

@@ -79,10 +79,13 @@
 `data/` 是爬虫按真实接口抓下来的台账，按**楼栋 → 房间 → 个人**三级存放：
 
 ```
+data/index.json                      首屏用的合并索引：截止时间 + 每栋房间清单（页面只发 1 个请求）
 data/meta.json                       总索引：截止时间、楼栋数、房间数、记录数
 data/loudong/3/index.json            3 号楼的房间清单（每间的笔数/金额/余额）
 data/loudong/3/room-101.json         3 号楼 101 室：余额快照 + 逐笔充值 + 按人汇总
 ```
+
+> 为什么要 `data/index.json`：GitHub Pages（Fastly）对同一 IP 的**突发并发**请求会短暂返回 403，页面原来一次拉 `meta + 12 个楼栋索引` 会被限流；合并成一个 24 KB 的索引后首屏只发 1 个请求，且代码里带 403/429 退避重试。
 
 - 每个房间文件里都写明 `cutoff`（**数据截止时间**）与 `balance`（已用/已购/剩余），逐笔记录带 `buyer`（充值账号），并附 `persons`（每人笔数、金额）——所以「精细到个人」是离线也能看的。
 - 当前已收录：**12 栋 / 2035 间 / 295696 笔**，数据截止 **2026-11-07 03:51:58**（共 2048 个 JSON，约 28.6 MB）。
@@ -93,6 +96,7 @@ data/loudong/3/room-101.json         3 号楼 101 室：余额快照 + 逐笔充
 node tools/crawl.mjs --concurrency 6           # 全量 2035 间，约 15 分钟
 node tools/crawl.mjs --loudong 3 --limit 20    # 只抓 3 号楼前 20 间，试用
 node tools/normalize-data.mjs                  # 把「房间号=完整编码」统一成房号，并重建两个索引
+node tools/build-index.mjs                     # 合并成 data/index.json（页面首屏只读它）
 ```
 
 - 抓完把 `data/` 一起提交即可，Actions 会自动带上（见 `.github/workflows/pages.yml`）。

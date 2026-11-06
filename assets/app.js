@@ -585,6 +585,10 @@ async function detectRelays(target) {
   const btn = $(btnId);
   const note = $(noteId);
   relayList = relayCandidates();
+  if (!registryEndpoints.length) {
+    try { registryEndpoints = await api.loadRelayRegistry(); } catch {}
+  }
+  relayList = relayCandidates();
   if (!relayList.length) { toast('没有可检测的地址，先在「中转地址」里填一个'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '检测中…'; }
   if (note) note.textContent = '正在并发实测 ' + relayList.length + ' 个候选地址…';
@@ -1246,8 +1250,9 @@ async function boot() {
   renderBalance();
   renderData();
 
-  // 历史数据截止时间（只读一个很小的 json，用于界面标注）
-  api.loadRelayRegistry().then((list) => { registryEndpoints = list; }).catch(() => {});
+  // 历史数据截止时间（读合并索引 data/index.json；GitHub Pages 对并发请求会 403，所以只发这一个）
+  const later = window.requestIdleCallback || ((fn) => setTimeout(fn, 1200));
+  later(() => { api.loadRelayRegistry().then((list) => { registryEndpoints = list; }).catch(() => {}); });
   api.historyMeta().then((m) => {
     S.cutoff = m.cutoff || '';
     renderChips();
