@@ -419,6 +419,203 @@ async function saveRoom(event) {
   }
 }
 
+/* ------------------------------------------------------------------ 可用房间 */
+let roomRows = [];
+
+function shortRoomName(full, ln) {
+  const s = String(full == null ? '' : full);
+  return ln && s.indexOf(ln) === 0 ? s.slice(ln.length) : s;
+}
+
+async function loadRoomList(force) {
+  const btn = $('btn-room-list');
+  if (btn) { btn.disabled = true; btn.textContent = '读取中…'; }
+  const xiaoquId = String($('in-xiaoqu').value || '').trim() || api.DEFAULT_XIAOQU;
+  const datasource = String($('in-datasource').value || '').trim() || api.DEFAULT_DATASOURCE;
+  try {
+    roomRows = await api.allRooms(xiaoquId, datasource, force ? { force: true } : {});
+    renderRoomList();
+  } catch (err) {
+    toast('读取房间列表失败：' + (err && err.message ? err.message : err), 5000);
+    revealChannel(err);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '查询可用房间'; }
+  }
+}
+
+function renderRoomList() {
+  const wrap = $('room-list-wrap');
+  const box = $('room-list');
+  const note = $('room-list-note');
+  if (!wrap || !box || !note) return;
+  wrap.hidden = false;
+  if (!roomRows.length) {
+    note.textContent = '没有读到房间数据';
+    box.innerHTML = '<div class="empty">接口没返回房间列表，先确认通道可用再试。</div>';
+    return;
+  }
+  const ln = String($('in-loudong').value || '').trim();
+  if (!ln) {
+    const map = new Map();
+    roomRows.forEach((r) => {
+      const n = api.loudongNumber(r.loudong);
+      if (!n) return;
+      if (!map.has(n)) map.set(n, { n, name: r.loudong || (n + ' 号楼'), count: 0 });
+      map.get(n).count += 1;
+    });
+    const items = Array.from(map.values()).sort((a, b) => a.n - b.n);
+    note.textContent = '共 ' + items.length + ' 个楼栋 · 点楼栋就能看到该楼全部房间';
+    box.innerHTML = items.map((x) =>
+      '<button class="room-item" type="button" data-loudong="' + x.n + '">' + esc(x.name) +
+      ' <span class="mini">' + x.count + ' 间</span></button>').join('');
+    return;
+  }
+  const rows = roomRows
+    .filter((r) => api.loudongNumber(r.loudong) === Number(ln))
+    .map((r) => ({ id: r.roomId, short: shortRoomName(r.room, ln) }))
+    .filter((r) => /^\d{2,}$/.test(r.short))
+    .sort((a, b) => ((Number(a.short) || 0) - (Number(b.short) || 0)) || (a.short < b.short ? -1 : 1));
+  const special = roomRows.filter((r) => api.loudongNumber(r.loudong) === Number(ln)).length - rows.length;
+  note.textContent = ln + ' 号楼 · 共 ' + rows.length + ' 间 · 点房间号直接查询' +
+    (special > 0 ? '（另有 ' + special + ' 间公用/备用房不支持按房间号定位）' : '');
+  box.innerHTML = rows.length
+    ? rows.map((r) => '<button class="room-item" type="button" data-room="' + esc(r.short) + '">' +
+        esc(r.short) + '</button>').join('')
+    : '<div class="empty">这个楼栋下没有房间，换个楼栋号试试。</div>';
+}
+
+async function onRoomListClick(event) {
+  const btn = event.target.closest('.room-item');
+  if (!btn) return;
+  if (btn.dataset.loudong) {
+    $('in-loudong').value = btn.dataset.loudong;
+    renderRoomList();
+    return;
+  }
+  if (btn.dataset.room) {
+    $('in-room').value = btn.dataset.room;
+    await saveRoom();
+  }
+}
+
+/* ------------------------------------------------------------------ 中转检测 */
+let relayList = [];
+
+function relayCandidates() {
+  const seen = new Set();
+  const out = [];
+  const add = (url, label, mode) => {
+    const u = api.normalizeRelayBase(url);
+    if (!u) return;
+    const m = api.normalizeRelayMode(mode);
+    const key = m + '|' + u;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ url: u, label, mode: m, state: 'idle', ms: 0, rooms: 0, note: '' });
+  };
+  const ch = api.getChannel();
+  const saved = store.get(KEY.channel, null);
+  add(($('in-relay') || {}).value, '输入框里填的地址', ch.relayMode);
+  if (saved && saved.relayBase) add(saved.relayBase, '上次保存的地址', saved.relayMode);
+  let q = '';
+  try { q = new URLSearchParams(location.search).get('relay') || ''; } catch (e) { q = ''; }
+  if (q) add(q, '链接参数 ?relay=', 'prefix');
+  if (!/(^|\.)github\.io$/i.test(location.hostname)) add(location.origin, '本站同源（反向代理）', 'prefix');
+  add('http://127.0.0.1:8787', '本机 Node 中转 127.0.0.1:8787', 'prefix');
+  add('http://localhost:8787', '本机 Node 中转 localhost:8787', 'prefix');
+  api.PUBLIC_RELAYS.forEach((x) => add(x.url, x.label + '（实测多半已失效）', x.mode));
+  return out;
+}
+
+function renderRelayCandidates(list) {
+  const box = $('relay-candidates');
+  if (!box) return;
+  box.hidden = false;
+  box.innerHTML = list.map((c, i) => {
+    const state = c.state === 'ok' ? 'ok' : c.state === 'fail' ? 'fail' : 'idle';
+    const meta = c.state === 'ok'
+      ? '可用 · ' + c.ms + ' ms · 读到 ' + c.rooms + ' 个房间'
+      : c.state === 'fail'
+        ? '不可用 · ' + esc((c.note || '').slice(0, 110))
+        : c.state === 'testing' ? '检测中…' : '未检测';
+    const active = api.getChannel().mode === 'relay' &&
+      api.getChannel().relayBase === c.url && api.getChannel().relayMode === c.mode;
+    return '<div class="cand ' + state + (active ? ' on' : '') + '">' +
+      '<div class="cand-main"><span class="cand-label">' + esc(c.label) + (active ? ' · 正在使用' : '') + '</span>' +
+      '<code class="cand-url">' + esc(c.url) + '</code></div>' +
+      '<div class="cand-meta">' + meta + '</div>' +
+      '<button class="btn mini' + (state === 'ok' ? ' primary' : '') + '" type="button" data-pick="' + i + '"' +
+      (c.state === 'testing' ? ' disabled' : '') + '>' + (state === 'ok' ? '用它查询' : '选用') + '</button>' +
+      '</div>';
+  }).join('');
+}
+
+async function detectRelays() {
+  const btn = $('btn-detect-relay');
+  const note = $('detect-note');
+  relayList = relayCandidates();
+  if (!relayList.length) { toast('没有可检测的地址，先在「中转地址」里填一个'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '检测中…'; }
+  if (note) note.textContent = '正在并发实测 ' + relayList.length + ' 个候选地址…';
+  relayList.forEach((c) => { c.state = 'testing'; });
+  renderRelayCandidates(relayList);
+  await Promise.all(relayList.map(async (c) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 9000);
+    try {
+      const r = await api.probeRelay(c.url, c.mode, { signal: ctrl.signal });
+      c.state = 'ok'; c.ms = r.ms; c.rooms = r.rooms; c.note = '';
+    } catch (err) {
+      c.state = 'fail';
+      c.note = err && err.name === 'AbortError'
+        ? '超时 9 秒没响应'
+        : String((err && err.message) || err).slice(0, 120);
+    } finally {
+      clearTimeout(timer);
+      renderRelayCandidates(relayList);
+    }
+  }));
+  const okCount = relayList.filter((c) => c.state === 'ok').length;
+  if (note) {
+    note.textContent = okCount
+      ? '检测完成：' + okCount + ' 个可用 · 点「用它查询」，地址会记在本机'
+      : '检测完成：没有可用地址 · 按上面说明自建一个中转，或在「中转地址」里手填';
+  }
+  renderRelayCandidates(relayList);
+  if (btn) { btn.disabled = false; btn.textContent = '自动检测可用中转'; }
+  toast(okCount ? '找到 ' + okCount + ' 个可用中转' : '没有检测到可用中转', 4200);
+}
+
+async function pickRelay(index) {
+  const c = relayList[index];
+  if (!c) return;
+  const saved = api.setChannel({ mode: 'relay', relayBase: c.url, relayMode: c.mode });
+  store.set(KEY.channel, saved);
+  const modeSel = $('in-mode');
+  if (modeSel) modeSel.value = 'relay';
+  const relayInput = $('in-relay');
+  if (relayInput) relayInput.value = c.url;
+  const field = relayInput && relayInput.closest ? relayInput.closest('.field') : null;
+  if (field) field.hidden = false;
+  renderChips();
+  renderChannelNote();
+  renderRelayCandidates(relayList);
+  toast('已切换到：' + c.label, 2800);
+  if (S.room) await runQuery({ refetch: true });
+  else toast('通道就绪，接着填楼栋号和房间号就能查了', 3400);
+}
+
+function renderChannelNote() {
+  const el = $('channel-note');
+  if (!el) return;
+  const ch = api.getChannel();
+  if (ch.mode === 'demo') el.textContent = '当前：示例数据（不会请求学校接口）';
+  else if (ch.mode === 'relay') {
+    el.textContent = '当前：中转 ' + (ch.relayBase || '（未填）') +
+      (ch.relayMode === 'query' ? '（公共代理模式）' : '');
+  } else el.textContent = '当前：直连 pay.wxstc.cn —— 需要同源部署；在 Pages 上会被 CORS 拦，请改用中转';
+}
+
 /* ------------------------------------------------------------------ 导出 */
 function guardExport() {
   if (!S.room) { toast('先设置房间'); return false; }
@@ -455,6 +652,7 @@ function loadChannelInputs() {
   if (mode) mode.value = ch.mode;
   if (relay) relay.value = ch.relayBase || '';
   if (relay) relay.closest('.field').hidden = ch.mode !== 'relay';
+  renderChannelNote();
 }
 
 async function applyChannel() {
@@ -467,9 +665,10 @@ async function applyChannel() {
   const btn = $('btn-test-channel');
   if (btn) { btn.disabled = true; btn.textContent = '测试中…'; }
   try {
-    const saved = api.setChannel({ mode, relayBase });
+    const saved = api.setChannel({ mode, relayBase, relayMode: api.getChannel().relayMode });
     store.set(KEY.channel, saved);
     renderChips();
+    renderChannelNote();
     S.all = [];
     S.items = [];
     S.summary = [];
@@ -575,6 +774,34 @@ function bind() {
     if (field) field.hidden = $('in-mode').value !== 'relay';
   });
   $('btn-test-channel').addEventListener('click', applyChannel);
+
+  // 可用房间
+  const btnRooms = $('btn-room-list');
+  if (btnRooms) btnRooms.addEventListener('click', () => loadRoomList(false));
+  const roomBox = $('room-list');
+  if (roomBox) roomBox.addEventListener('click', onRoomListClick);
+  const closeRooms = $('btn-room-list-close');
+  if (closeRooms) closeRooms.addEventListener('click', () => { $('room-list-wrap').hidden = true; });
+
+  // 改了楼栋号，若房间列表已展开就按新楼栋重排（不额外发请求）
+  let ldTimer = 0;
+  $('in-loudong').addEventListener('input', () => {
+    const wrap = $('room-list-wrap');
+    if (!wrap || wrap.hidden || !roomRows.length) return;
+    clearTimeout(ldTimer);
+    ldTimer = setTimeout(renderRoomList, 200);
+  });
+
+  // 中转自动检测
+  const btnDetect = $('btn-detect-relay');
+  if (btnDetect) btnDetect.addEventListener('click', detectRelays);
+  const candBox = $('relay-candidates');
+  if (candBox) {
+    candBox.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick]');
+      if (btn) pickRelay(Number(btn.dataset.pick));
+    });
+  }
 }
 
 /* ------------------------------------------------------------------ 启动 */

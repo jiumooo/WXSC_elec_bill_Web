@@ -84,6 +84,16 @@
         <button class="btn primary" id="btn-save-room" type="submit">保存并重新解析</button>
       </div>
     </form>
+    <div class="bar room-bar">
+      <button class="btn" id="btn-room-list" type="button">查询可用房间</button>
+      <span class="bar-note" id="room-list-note">先填楼栋号再点，列出该楼全部房间；不填楼栋号则先列楼栋</span>
+    </div>
+    <div class="roomlist" id="room-list-wrap" hidden>
+      <div class="roomlist-body" id="room-list"></div>
+      <div class="roomlist-foot">
+        <button class="btn mini ghost" id="btn-room-list-close" type="button">收起</button>
+      </div>
+    </div>
     <div class="hint">
       楼栋号与房间号只填数字，页面会自动拼成完整房间编码去匹配（3 号楼 101 室 → 楼栋 3、房间 101）。
       设置只写入本机 localStorage，不会上传，也不会影响别人。
@@ -160,17 +170,22 @@
     </summary>
     <div class="channel-body">
       <p class="hint">
-        学校接口没有开放跨域（CORS），所以从 <code>*.github.io</code> 直接请求会被浏览器拦下。
-        页面支持两种取数方式：域名下同源部署时用「直连」即可；部署在 GitHub Pages 时，
-        把下面的地址换成一个自建中转（仓库 <code>relay/</code> 里有 Cloudflare Worker 和本地 Node 两种实现），
-        中转只做转发、不保存任何数据，因此依然不影响多用户隔离。
+        <b>为什么不能直接查：</b>学校接口 <code>pay.wxstc.cn</code> 的响应里没有
+        <code>Access-Control-Allow-Origin</code>，浏览器会按同源策略把跨域响应丢掉，
+        页面拿不到数据；GitHub Pages 是纯静态托管，也改不了别人的响应头。
+        所以从 Pages 上取数必须经过一个「中转」——中转只负责转发一次请求，
+        不保存任何 Cookie、账号或查询结果，因此多人同时用依然互不影响。
+      </p>
+      <p class="hint">
+        三条路：①点下面「自动检测可用中转」，能用的直接选；②自己部署一个中转
+        （仓库 <code>relay/</code> 里的 Cloudflare Worker 或本机 Node，命令见 README）；③先用「示例数据」看界面。
       </p>
       <div class="row">
         <div class="field">
           <label class="f" for="in-mode">取数方式</label>
           <select id="in-mode">
             <option value="direct">直连（同源部署 / 反向代理）</option>
-            <option value="relay">自建中转（推荐用于 GitHub Pages）</option>
+            <option value="relay">中转（GitHub Pages 用这个）</option>
             <option value="demo">示例数据（只看界面，不发请求）</option>
           </select>
         </div>
@@ -182,6 +197,22 @@
           <button class="btn primary" id="btn-test-channel" type="button">保存并测试</button>
         </div>
       </div>
+      <div class="bar room-bar">
+        <button class="btn" id="btn-detect-relay" type="button">自动检测可用中转</button>
+        <span class="bar-note" id="detect-note">逐个实测：已保存 / 已填 / 链接参数 / 本机 Node 中转 / 本站同源 / 公共代理</span>
+      </div>
+      <div class="cands" id="relay-candidates" hidden></div>
+      <details class="mini-details">
+        <summary>都没有？自己弄一个（免费，5 分钟）</summary>
+        <ol class="steps">
+          <li><b>Cloudflare Worker（推荐，得到 https 地址）</b>：登录 Cloudflare → Workers &amp; Pages → Create Worker →
+            把仓库里 <code>relay/worker.js</code> 的内容整个粘进去 → Deploy，得到 <code>https://xxx.workers.dev</code>，
+            填到上面的「中转地址」→ 点「保存并测试」。</li>
+          <li><b>本机 Node（最省事）</b>：克隆仓库后执行 <code>node relay/server.mjs</code>，再打开
+            <code>http://127.0.0.1:8787/</code> —— 这个地址本身就同源，直连即可，检测也会自动认出它。</li>
+          <li>中转只转发一次请求、不落任何数据；不用了把地址清掉即可。</li>
+        </ol>
+      </details>
       <div class="hint" id="channel-note">当前：直连 pay.wxstc.cn</div>
     </div>
   </details>

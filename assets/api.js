@@ -201,7 +201,28 @@ export const CHANNELS = {
   demo: { id: 'demo', label: '示例数据' },
 };
 
-let channel = { mode: 'direct', relayBase: '' };
+/* 中转有两种接法：
+ *   prefix —— 自建中转（Worker / Node），把 /grdp-ele-third-unite/... 原样转发，推荐
+ *   query  —— 公共 CORS 代理，把「完整上游地址」编码后拼在 ?url= 后面 */
+export function normalizeRelayMode(value) {
+  return value === 'query' ? 'query' : 'prefix';
+}
+
+export function normalizeRelayBase(value) {
+  return String(value == null ? '' : value).trim().replace(/\/+$/, '');
+}
+
+/** 把上游路径拼成实际请求地址（probe 与正式请求共用同一套规则） */
+export function relayUrl(base, mode, path) {
+  const b = normalizeRelayBase(base);
+  if (!b) throw new Error('还没填写中转地址');
+  const full = UPSTREAM + path;
+  return normalizeRelayMode(mode) === 'query'
+    ? b + encodeURIComponent(full)
+    : b + '/grdp-ele-third-unite' + path;
+}
+
+let channel = { mode: 'direct', relayBase: '', relayMode: 'prefix' };
 
 export function getChannel() {
   return { ...channel };
@@ -210,19 +231,24 @@ export function getChannel() {
 export function setChannel(next) {
   channel = {
     mode: next && (next.mode === 'relay' || next.mode === 'demo') ? next.mode : 'direct',
-    relayBase: String((next && next.relayBase) || '').replace(/\/+$/, ''),
+    relayBase: normalizeRelayBase(next && next.relayBase),
+    relayMode: normalizeRelayMode(next && next.relayMode),
   };
   roomsCache.clear();
   return getChannel();
 }
 
 function endpoint(path) {
-  if (channel.mode === 'relay') {
-    if (!channel.relayBase) throw new Error('还没填写中转地址');
-    return channel.relayBase + '/grdp-ele-third-unite' + path;
-  }
+  if (channel.mode === 'relay') return relayUrl(channel.relayBase, channel.relayMode, path);
   return UPSTREAM + path;
 }
+
+/* 公共 CORS 代理只作为「自动检测」的候选展示，实测大多已失效，仅作兜底 */
+export const PUBLIC_RELAYS = [
+  { url: 'https://api.allorigins.win/raw?url=', mode: 'query', label: 'allorigins（公共代理）' },
+  { url: 'https://corsproxy.io/?url=', mode: 'query', label: 'corsproxy.io（公共代理）' },
+  { url: 'https://api.codetabs.com/v1/proxy?quest=', mode: 'query', label: 'codetabs（公共代理）' },
+];
 
 function sortKeys(obj) {
   const out = {};
@@ -246,7 +272,7 @@ async function post(path, payload, options = {}) {
   };
   body.sign = md5(utf8Encode(JSON.stringify(sortKeys(body)) + APPSECRET)).toUpperCase();
 
-  const url = endpoint(path);
+  const url = options.endpoint || endpoint(path);
   let response;
   try {
     response = await fetch(url, {
@@ -278,6 +304,30 @@ async function post(path, payload, options = {}) {
     }
   }
   return res;
+}
+
+/* ------------------------------------------------------------------ 中转探测 */
+/**
+ * 探测一个中转地址是否真能用：直接请求一次房间列表并尝试解密。
+ * 不读写全局通道状态（请求地址由参数显式给出），因此可以并发探测多个候选。
+ * 返回 { ok:true, ms, rooms }，失败时抛出带原因的错误。
+ */
+export async function probeRelay(relayBase, relayMode = 'prefix', options = {}) {
+  const base = normalizeRelayBase(relayBase);
+  if (!/^https?:\/\//i.test(base)) throw new Error('地址要以 http:// 或 https:// 开头');
+  const t0 = Date.now();
+  const path = '/api/school/ele/third/room/list';
+  const url = relayUrl(base, relayMode, path);
+  const res = await post(path, {
+    xiaoquId: DEFAULT_XIAOQU,
+    datasource: DEFAULT_DATASOURCE,
+    servicecode: '0826',
+  }, { ...options, endpoint: url });
+  const rows = Array.isArray(res.decoded) ? res.decoded : [];
+  if (!rows.length) {
+    throw new Error('通道能连上，但没拿到房间列表（' + JSON.stringify(res).slice(0, 120) + '）');
+  }
+  return { ok: true, ms: Date.now() - t0, rooms: rows.length };
 }
 
 /* ------------------------------------------------------------------ 房间列表 */
