@@ -13,6 +13,12 @@
       "mode": "prefix",
       "label": "本机中转 localhost:8787",
       "note": "同上"
+    },
+    {
+      "url": "http://127.0.0.1:8788",
+      "mode": "prefix",
+      "label": "本机 Deno 中转 127.0.0.1:8788",
+      "note": "装了 Deno 的话：deno run --allow-net relay/deno.ts"
     }
   ]
 }

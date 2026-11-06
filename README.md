@@ -114,7 +114,17 @@ node tools/normalize-data.mjs                  # 把「房间号=完整编码」
 | 本站同源 | 页面本身不是 `*.github.io` 时才有意义（反向代理部署） |
 | allorigins / codetabs | 公共代理兜底。**2026 年起基本只支持 GET**，上游只认 POST，检测多半全红，属正常 |
 
-变绿的行点 **「用它查询」** 即切换过去并立刻重查；全红就点 **「直接用历史数据」**，或者用下面两种自建方式，5 分钟搞定、免费。
+变绿的行点 **「用它查询」** 即切换过去并立刻重查；全红就点 **「直接用历史数据」**，或者用下面三种自建方式（都免费，5 分钟）。
+
+### 三种自建中转（任选一种）
+
+| 方式 | 需要什么 | 适合谁 | 文件 |
+| --- | --- | --- | --- |
+| 本地 Node | 有 Node 就行，零依赖 | 只在自己电脑上用 | [`relay/server.mjs`](relay/server.mjs) |
+| Cloudflare Worker | 一个免费 CF 账号（网页点两下） | 想给同学一起用 | [`relay/worker.js`](relay/worker.js) |
+| Deno Deploy | 一个免费 Deno 账号（网页粘代码） | 不想装任何东西 | [`relay/deno.ts`](relay/deno.ts) |
+
+三者的接口完全一致（都把 `/grdp-ele-third-unite/...` 原样转发），所以页面不用改，填地址就行。
 
 ### 方式一：Cloudflare Worker（免费、两步）
 
@@ -143,6 +153,18 @@ node relay/server.mjs
 ```
 
 它同时发布仓库根目录的静态文件并转发 `/grdp-ele-third-unite/*`，所以本地看到的效果和线上一致。
+
+### 方式三：Deno Deploy（不想装东西就选这个）
+
+装过 Deno 的可以在本机直接跑（和 Node 版并存，端口 8788）：
+
+```bash
+deno run --allow-net relay/deno.ts
+# 页面中转地址填 http://127.0.0.1:8788
+```
+
+想挂到公网：打开 [dash.deno.com](https://dash.deno.com) → `New Playground` → 把 [`relay/deno.ts`](relay/deno.ts) 全文粘进去 → `Save & Deploy`，
+拿到 `https://<name>.deno.dev` 填进「中转地址」即可（免费额度对几个人查询完全够）。
 
 ### 部署页面到 GitHub Pages
 
