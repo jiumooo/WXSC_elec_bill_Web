@@ -234,22 +234,29 @@ git push
 ## 目录结构
 
 ```
-index.html                  页面骨架
-assets/style.css            样式（浅色/深色自动跟随系统）
+index.html                  页面骨架（CSS 已内联、脚本用 app.bundle.js）
+assets/style.css            样式源码（浅色/深色自动跟随系统，改完跑 tools/bundle.mjs）
 assets/api.js               协议层：RSA 分段加解密、签名、房间解析、充值记录、历史数据读取
 assets/xlsx.js              零依赖 xlsx 写入器（ZIP + SpreadsheetML）
 assets/export.js            Excel / Markdown 导出与下载
 assets/app.js               页面控制器（状态、渲染、事件）
+assets/app.bundle.js        上面 4 个模块合成的单文件（页面实际加载的就是它）
+data/index.json             首屏合并索引（截止时间 + 每栋房间清单，24 KB）
 data/meta.json              历史台账总索引（截止时间 / 楼栋 / 房间 / 记录数）
 data/loudong/<楼栋>/index.json      该楼栋房间清单
 data/loudong/<楼栋>/room-<房号>.json 单房间：余额快照 + 逐笔 + 每人汇总
 tools/crawl.mjs             抓取真实接口 → 生成本地台账
+tools/normalize-data.mjs    规范化房号 + 重建两级索引
+tools/build-index.mjs       生成 data/index.json
+tools/bundle.mjs            打单文件 bundle + 内联 CSS（改完 JS/CSS 必须跑一次）
 relay/worker.js             Cloudflare Worker 中转
 relay/wrangler.toml         Worker 配置
 relay/server.mjs            本地 Node 中转 + 静态服务
 relay/endpoints.json        自建中转登记表（检测时一起实测）
 .github/workflows/pages.yml  GitHub Actions 发布流程
 ```
+
+> 为什么要打 bundle：ES module 的 `import` 只要有一个文件被 Pages 限流返回 403，整个模块图就崩、页面白屏。合成单文件 + `onerror` 重试后，首屏只剩 **index.html / app.bundle.js / data/index.json** 三个请求。
 
 ## 已知边界
 
