@@ -1,0 +1,9 @@
+name = "wxsc-elec-relay"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+# 可选：只允许自己的 Pages 站点调用（不配则放开 *）
+# [vars]
+# ALLOWED_ORIGIN = "https://wineink.github.io"
+# UPSTREAM_HOST = "https://pay.wxstc.cn"

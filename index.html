@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>无锡科技职业技术学院 · 电费查询</title>
+<meta name="description" content="无锡科技职业技术学院电费查询：当前余额、房间设置、充值记录查询、导出 Excel / Markdown。纯静态页面，所有人的设置与查询互不影响。">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231f6feb'/%3E%3Cpath d='M55 16 32 56h17l-6 28 25-42H50z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 100 100" width="22" height="22"><path d="M55 16 32 56h17l-6 28 25-42H50z" fill="currentColor"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>无锡科技职业技术学院 · 电费查询</h1>
+        <div class="sub">静态页面 · 数据实时取自学校缴费平台 · 设置只保存在你自己的浏览器</div>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip" id="chip-version">v1.0.0</span>
+      <span class="chip" id="chip-channel">通道：直连</span>
+      <span class="chip chip-room" id="chip-room">未设置房间</span>
+    </div>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- 当前房间 -->
+  <section class="card" id="card-balance">
+    <div class="card-head">
+      <h2>当前房间 <span class="tag" id="room-tag">—</span></h2>
+      <button class="btn ghost" id="btn-refresh-room" type="button">刷新余额</button>
+    </div>
+    <div class="grid g4">
+      <div class="stat">
+        <div class="k">剩余电量</div>
+        <div class="v" id="stat-left">—<small>度</small></div>
+      </div>
+      <div class="stat">
+        <div class="k">已用电量</div>
+        <div class="v" id="stat-used">—<small>度</small></div>
+      </div>
+      <div class="stat">
+        <div class="k">已购电量</div>
+        <div class="v" id="stat-buy">—<small>度</small></div>
+      </div>
+      <div class="stat">
+        <div class="k">已用比例</div>
+        <div class="v" id="stat-ratio">—<small>%</small></div>
+      </div>
+    </div>
+    <div class="hint" id="balance-note">先设置楼栋号和房间号，然后就能看到实时余额。</div>
+  </section>
+
+  <!-- 房间设置 -->
+  <section class="card" id="card-room">
+    <div class="card-head">
+      <h2>房间设置</h2>
+    </div>
+    <form class="row" id="form-room" autocomplete="off">
+      <div class="field">
+        <label class="f" for="in-loudong">楼栋号</label>
+        <input type="number" id="in-loudong" inputmode="numeric" min="1" max="200" placeholder="例如 3">
+      </div>
+      <div class="field">
+        <label class="f" for="in-room">房间号</label>
+        <input type="number" id="in-room" inputmode="numeric" min="1" max="99999" placeholder="例如 101">
+      </div>
+      <div class="field">
+        <label class="f" for="in-xiaoqu">小区 / 校区 ID</label>
+        <input type="number" id="in-xiaoqu" inputmode="numeric" min="1" placeholder="1">
+      </div>
+      <div class="field">
+        <label class="f" for="in-datasource">数据源</label>
+        <input type="text" id="in-datasource" placeholder="cg1_1">
+      </div>
+      <div class="field field-action">
+        <button class="btn primary" id="btn-save-room" type="submit">保存并重新解析</button>
+      </div>
+    </form>
+    <div class="hint">
+      楼栋号与房间号只填数字，页面会自动拼成完整房间编码去匹配（3 号楼 101 室 → 楼栋 3、房间 101）。
+      设置只写入本机 localStorage，不会上传，也不会影响别人。
+    </div>
+    <div class="recent" id="recent-rooms" hidden>
+      <span class="recent-label">本机用过的房间</span>
+      <div class="recent-list" id="recent-list"></div>
+    </div>
+  </section>
+
+  <!-- 充值记录查询 -->
+  <section class="card" id="card-query">
+    <div class="card-head">
+      <h2>充值记录查询 <span class="tag" id="q-tag">全部</span></h2>
+    </div>
+    <form class="row" id="form-query" autocomplete="off">
+      <div class="field">
+        <label class="f" for="in-start">开始时间（精确到秒）</label>
+        <input type="datetime-local" id="in-start" step="1">
+      </div>
+      <div class="field">
+        <label class="f" for="in-end">结束时间（精确到秒）</label>
+        <input type="datetime-local" id="in-end" step="1">
+      </div>
+      <div class="field field-action">
+        <button class="btn primary" id="btn-query" type="submit">查询</button>
+      </div>
+    </form>
+    <div class="bar">
+      <button class="btn" type="button" data-range="month">本月</button>
+      <button class="btn" type="button" data-range="30d">近 30 天</button>
+      <button class="btn" type="button" data-range="year">今年</button>
+      <button class="btn" type="button" data-range="all">全部</button>
+      <span class="bar-sep"></span>
+      <button class="btn" type="button" id="btn-export-xlsx">导出 Excel</button>
+      <button class="btn" type="button" id="btn-export-md">导出 Markdown</button>
+    </div>
+    <div class="hint" id="q-hint">导出的是当前这次查询的结果，不会再请求一次接口。</div>
+  </section>
+
+  <!-- 数据 -->
+  <section class="card" id="card-data">
+    <div class="tabs" role="tablist">
+      <button class="tab on" role="tab" data-tab="summary" type="button">每人总金额表</button>
+      <button class="tab" role="tab" data-tab="detail" type="button">充值明细表</button>
+      <button class="tab" role="tab" data-tab="person" type="button">个人充值记录</button>
+    </div>
+    <div class="meta" id="data-meta">还没有查询结果。</div>
+
+    <div class="pane" id="pane-summary" role="tabpanel">
+      <div class="empty">设置房间后点「查询」，这里会列出每位充值账号的累计金额。</div>
+    </div>
+
+    <div class="pane" id="pane-detail" role="tabpanel" hidden>
+      <div class="empty">还没有查询结果。</div>
+    </div>
+
+    <div class="pane" id="pane-person" role="tabpanel" hidden>
+      <div class="row row-tight">
+        <div class="field">
+          <label class="f" for="in-person">选择账号</label>
+          <select id="in-person"></select>
+        </div>
+      </div>
+      <div id="person-body"><div class="empty">还没有查询结果。</div></div>
+    </div>
+  </section>
+
+  <!-- 通道 -->
+  <details class="card" id="card-channel">
+    <summary>
+      <span class="summary-title">数据通道与部署说明</span>
+      <span class="tag" id="channel-tag">直连</span>
+    </summary>
+    <div class="channel-body">
+      <p class="hint">
+        学校接口没有开放跨域（CORS），所以从 <code>*.github.io</code> 直接请求会被浏览器拦下。
+        页面支持两种取数方式：域名下同源部署时用「直连」即可；部署在 GitHub Pages 时，
+        把下面的地址换成一个自建中转（仓库 <code>relay/</code> 里有 Cloudflare Worker 和本地 Node 两种实现），
+        中转只做转发、不保存任何数据，因此依然不影响多用户隔离。
+      </p>
+      <div class="row">
+        <div class="field">
+          <label class="f" for="in-mode">取数方式</label>
+          <select id="in-mode">
+            <option value="direct">直连（同源部署 / 反向代理）</option>
+            <option value="relay">自建中转（推荐用于 GitHub Pages）</option>
+            <option value="demo">示例数据（只看界面，不发请求）</option>
+          </select>
+        </div>
+        <div class="field" id="relay-field">
+          <label class="f" for="in-relay">中转地址</label>
+          <input type="url" id="in-relay" placeholder="https://your-worker.workers.dev">
+        </div>
+        <div class="field field-action">
+          <button class="btn primary" id="btn-test-channel" type="button">保存并测试</button>
+        </div>
+      </div>
+      <div class="hint" id="channel-note">当前：直连 pay.wxstc.cn</div>
+    </div>
+  </details>
+
+  <div class="footnote">
+    <span id="foot-version">WXSC_elec_bill_Web v1.0.0</span>
+    <span>·</span>
+    <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
+    <span>·</span>
+    <a href="https://github.com/Wineink/WXSC_elec_bill_Web" target="_blank" rel="noopener noreferrer">GitHub</a>
+  </div>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>
