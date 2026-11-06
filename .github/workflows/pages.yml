@@ -15,14 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 只发布站点本体，避免把 .git 之类的东西塞进 Pages 产物
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp -R index.html assets README.md LICENSE .nojekyll _site/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -30,8 +33,15 @@ jobs:
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

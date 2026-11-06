@@ -90,16 +90,20 @@ node relay/server.mjs
 
 线上站点：**[https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**
 
-仓库已开启 Pages，源就是本仓库 `main` 分支根目录（纯静态、无构建）。改完直接推：
+仓库已开启 Pages，发布方式是 **GitHub Actions**（`.github/workflows/pages.yml`）：推到 `main` 就自动部署，
+构建失败会在 Actions 页面写明原因，不会像老的分支发布那样整站变成 503。改完直接推：
 
 ```bash
 git push
 ```
 
-新克隆一份时手动开启：`Settings → Pages → Build and deployment → Source: Deploy from a branch → main / (root)`。
+新克隆一份时手动开启：`Settings → Pages → Build and deployment → Source: GitHub Actions`。
 
-想改用 GitHub Actions 发布也可以：把 `docs/github-pages-workflow.yml` 复制到 `.github/workflows/pages.yml`，
-再把 Pages 的 Source 切到 `GitHub Actions`（推送 workflow 文件要求 token 带 `workflow` 权限）。
+## 线上打不开时
+
+历史上用「分支发布（legacy builder）」时偶发过一次：构建记录被写成 `Page build failed.`（duration 0），
+产物不更新，整站返回 GitHub 的 503 `Unicorn!` 页，而同时间别的 `*.github.io` 站点正常——与本仓库内容无关。
+现在发布已切到 Actions：`git push` 后到 Actions 页面看 `Deploy to GitHub Pages` 是否成功，成功即上线。
 
 ## 直接带参数打开
 
@@ -122,7 +126,7 @@ assets/app.js               页面控制器（状态、渲染、事件）
 relay/worker.js             Cloudflare Worker 中转
 relay/wrangler.toml         Worker 配置
 relay/server.mjs            本地 Node 中转 + 静态服务
-docs/github-pages-workflow.yml  可选：改用 GitHub Actions 发布时的 workflow
+.github/workflows/pages.yml  GitHub Actions 发布流程
 ```
 
 ## 已知边界
