@@ -27,7 +27,7 @@ jobs:
         run: |
           mkdir -p _site/relay
           cp -R index.html assets README.md LICENSE .nojekyll _site/
-          cp relay/worker.js relay/endpoints.json _site/relay/
+          cp relay/worker.js relay/endpoints.json relay/deno.ts relay/server.mjs _site/relay/
           cp -R data _site/data
 
       - name: Configure Pages

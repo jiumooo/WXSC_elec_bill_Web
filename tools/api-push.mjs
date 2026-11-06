@@ -27,17 +27,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function gh(method, url, body) {
   for (let attempt = 0; attempt < 20; attempt++) {
-    const res = await fetch(url.startsWith('http') ? url : API + url, {
-      method,
-      headers: {
-        Authorization: 'Bearer ' + TOKEN,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-        'User-Agent': 'wxsc-api-push',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch(url.startsWith('http') ? url : API + url, {
+        method,
+        headers: {
+          Authorization: 'Bearer ' + TOKEN,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+          'User-Agent': 'wxsc-api-push',
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (netErr) {
+      const wait = Math.min(60000, 3000 * (attempt + 1));
+      console.log('[net-retry]', String(netErr.message || netErr).slice(0, 60), '等待', Math.round(wait / 1000) + 's');
+      await sleep(wait);
+      continue;
+    }
     if (res.ok) return res.json();
     const text = await res.text();
     const retryAfter = Number(res.headers.get('retry-after'));
