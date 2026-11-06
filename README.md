@@ -6,7 +6,7 @@
 
 - **版本**：`1.0.0`
 - **形态**：纯前端（HTML + CSS + 原生 ES Module），零依赖、零构建步骤
-- **线上体验**：`https://wineink.github.io/WXSC_elec_bill_Web/`
+- **线上地址**：`https://jiumooo.github.io/WXSC_elec_bill_Web/`
 
 ---
 
@@ -56,7 +56,7 @@ npx wrangler deploy
 ```
 
 把该地址填进页面的「中转地址」，点「保存并测试」。也可直接带参数打开：
-`https://wineink.github.io/WXSC_elec_bill_Web/?relay=https://wxsc-elec-relay.xxx.workers.dev`
+`https://jiumooo.github.io/WXSC_elec_bill_Web/?relay=https://wxsc-elec-relay.xxx.workers.dev`
 
 可选变量（`relay/wrangler.toml`）：`ALLOWED_ORIGIN` 收紧到只允许你的站点，`UPSTREAM_HOST` 换上游。
 
@@ -72,9 +72,16 @@ node relay/server.mjs
 
 ### 部署页面到 GitHub Pages
 
-仓库已带 `.github/workflows/pages.yml`：推到 `main` 分支即自动发布静态文件（不需要构建）。
+仓库已开启 Pages，源就是本仓库 `main` 分支根目录（纯静态、无构建）。改完直接推：
 
-手动方式：仓库 `Settings → Pages → Build and deployment → Source: Deploy from a branch → main / (root)`。
+```bash
+git push
+```
+
+新克隆一份时手动开启：`Settings → Pages → Build and deployment → Source: Deploy from a branch → main / (root)`。
+
+想改用 GitHub Actions 发布也可以：把 `docs/github-pages-workflow.yml` 复制到 `.github/workflows/pages.yml`，
+再把 Pages 的 Source 切到 `GitHub Actions`（推送 workflow 文件要求 token 带 `workflow` 权限）。
 
 ## 直接带参数打开
 
@@ -82,6 +89,7 @@ node relay/server.mjs
 ?room=101&loudong=3          指定房间（自动保存为本机设置）
 ?relay=https://...           指定中转地址
 ?mode=demo                   示例数据
+?range=all                   时间范围初值：month / 30d / year / all
 ```
 
 ## 目录结构
@@ -96,7 +104,7 @@ assets/app.js               页面控制器（状态、渲染、事件）
 relay/worker.js             Cloudflare Worker 中转
 relay/wrangler.toml         Worker 配置
 relay/server.mjs            本地 Node 中转 + 静态服务
-.github/workflows/pages.yml GitHub Pages 自动发布
+docs/github-pages-workflow.yml  可选：改用 GitHub Actions 发布时的 workflow
 ```
 
 ## 已知边界
