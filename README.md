@@ -97,6 +97,10 @@ node tools/normalize-data.mjs                  # 把「房间号=完整编码」
 
 - 抓完把 `data/` 一起提交即可，Actions 会自动带上（见 `.github/workflows/pages.yml`）。
 
+**不想自己抓？已经配好每天自动刷新**：`.github/workflows/refresh-data.yml` 每天 UTC 19:17（北京时间 03:17）在 GitHub 的机器上直连上游跑一遍 `crawl → normalize`，有变化就提交，随后自动部署。
+因为跑在 GitHub 服务器上，**这一步也不需要任何中转**（已实测：runner 直连 `pay.wxstc.cn` 正常，2 间房 3 秒抓完 477 笔）。
+想立刻刷一次：Actions → **Refresh history data** → `Run workflow`（可填 `loudong` / `limit` 只抓一部分试跑）。
+
 中转支持两种接法，页面会自动区分：
 
 - `prefix`（默认）：自建 Worker / Node，把 `/grdp-ele-third-unite/...` 原样转发；
