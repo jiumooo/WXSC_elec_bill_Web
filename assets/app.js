@@ -6,7 +6,7 @@
  *   4. 因此多人同时打开、各查各的房间时，彼此的请求与结果完全独立。
  */
 import * as api from './api.js';
-import { downloadMarkdown, downloadExcel } from './export.js';
+import { downloadMarkdown, downloadExcel, viewTable, fileName, VIEWS } from './export.js';
 
 const KEY = {
   cfg: 'wxsc.elec.cfg.v1',
@@ -14,6 +14,8 @@ const KEY = {
   notes: 'wxsc.elec.notes.v1.',
   recent: 'wxsc.elec.recent.v1',
   range: 'wxsc.elec.range.v1',
+  guide: 'wxsc.elec.guide.v1',
+  enroll: 'wxsc.elec.enroll.v1',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -66,19 +68,17 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/* 取数失败时把「数据通道」展开并聚焦中转地址，省掉用户自己翻设置 */
+/* 取数失败时打开「中转通道」抽屉并聚焦中转地址，省掉用户自己翻设置 */
 function revealChannel(err) {
   const msg = String((err && err.message) || err || '');
   const isNetwork = /网络请求失败|Failed to fetch|NetworkError|Load failed|CORS/i.test(msg);
   if (!isNetwork) return;
-  const details = $('card-channel');
-  if (details && 'open' in details) details.open = true;
+  openDrawer('channel');
   const mode = $('in-mode');
   if (mode && api.getChannel().mode === 'direct') mode.value = 'relay';
   const relay = $('in-relay');
   const field = relay && relay.closest ? relay.closest('.field') : null;
   if (field) field.hidden = false;
-  if (details && details.scrollIntoView) details.scrollIntoView({ behavior: 'smooth', block: 'center' });
   if (relay && relay.focus) setTimeout(() => relay.focus(), 260);
 }
 
@@ -117,17 +117,17 @@ function renderChips() {
   const label = (api.CHANNELS[ch.mode] || api.CHANNELS.direct).label;
   setChip('chip-version', 'v' + api.APP_VERSION, '');
   const needRelay = ch.mode === 'direct' && /\.github\.io$/i.test(location.hostname);
-  setChip('chip-channel', needRelay ? '通道：直连 · 线上需中转' : '通道：' + label,
-    ch.mode === 'demo' || needRelay ? 'warn' : ch.mode === 'relay' ? 'ok' : '');
-  setChip('chip-room', S.room ? roomDesc() : '未设置房间', '');
   const tag = $('channel-tag');
-  if (tag) tag.textContent = label;
+  if (tag) {
+    tag.textContent = needRelay ? label + ' · 线上需中转' : label;
+    tag.className = 'tag' + (ch.mode === 'demo' || needRelay ? ' warn' : ch.mode === 'relay' ? ' ok' : '');
+  }
   const note = $('channel-note');
   if (note) {
     note.textContent = ch.mode === 'demo'
       ? '当前：示例数据（不会请求学校接口，仅用于预览界面）'
       : ch.mode === 'relay'
-        ? '当前：经由自建中转 ' + (ch.relayBase || '（地址为空）')
+        ? '当前：经由中转 ' + (ch.relayBase || '（地址为空）') + (ch.relayMode === 'query' ? '（公共代理模式）' : '')
         : needRelay
           ? '当前：直连 pay.wxstc.cn —— GitHub Pages 上会被浏览器拦，请点上面的「自动检测可用中转」，或填一个中转地址'
           : '当前：直连 pay.wxstc.cn（需要同源部署或反向代理）';
@@ -531,8 +531,8 @@ function relayCandidates() {
   return out;
 }
 
-function renderRelayCandidates(list) {
-  const box = $('relay-candidates');
+function renderRelayCandidates(list, boxId) {
+  const box = $(boxId || 'relay-candidates');
   if (!box) return;
   box.hidden = false;
   box.innerHTML = list.map((c, i) => {
@@ -554,15 +554,19 @@ function renderRelayCandidates(list) {
   }).join('');
 }
 
-async function detectRelays() {
-  const btn = $('btn-detect-relay');
-  const note = $('detect-note');
+async function detectRelays(target) {
+  const opt = target || {};
+  const boxId = opt.box || 'relay-candidates';
+  const noteId = opt.note || 'detect-note';
+  const btnId = opt.btn || 'btn-detect-relay';
+  const btn = $(btnId);
+  const note = $(noteId);
   relayList = relayCandidates();
   if (!relayList.length) { toast('没有可检测的地址，先在「中转地址」里填一个'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '检测中…'; }
   if (note) note.textContent = '正在并发实测 ' + relayList.length + ' 个候选地址…';
   relayList.forEach((c) => { c.state = 'testing'; });
-  renderRelayCandidates(relayList);
+  renderRelayCandidates(relayList, boxId);
   await Promise.all(relayList.map(async (c) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 9000);
@@ -576,7 +580,7 @@ async function detectRelays() {
         : String((err && err.message) || err).slice(0, 120);
     } finally {
       clearTimeout(timer);
-      renderRelayCandidates(relayList);
+      renderRelayCandidates(relayList, boxId);
     }
   }));
   const okCount = relayList.filter((c) => c.state === 'ok').length;
@@ -585,7 +589,7 @@ async function detectRelays() {
       ? '检测完成：' + okCount + ' 个可用 · 点「用它查询」，地址会记在本机'
       : '检测完成：没有可用地址 · 按上面说明自建一个中转，或在「中转地址」里手填';
   }
-  renderRelayCandidates(relayList);
+  renderRelayCandidates(relayList, boxId);
   if (btn) { btn.disabled = false; btn.textContent = '自动检测可用中转'; }
   toast(okCount ? '找到 ' + okCount + ' 个可用中转' : '没有检测到可用中转', 4200);
 }
@@ -604,9 +608,18 @@ async function pickRelay(index) {
   renderChips();
   renderChannelNote();
   renderRelayCandidates(relayList);
+  if (relayList.length) renderRelayCandidates(relayList, 'guide-cands');
+  const guide = $('guide');
+  if (guide && !guide.hidden && G.step <= 1) {
+    const note = $('guide-detect-note');
+    if (note) note.textContent = '已选用：' + c.label + ' · 下一步填入学年份';
+    toast('已切换到：' + c.label, 2600);
+    guideGo(2);
+    return;
+  }
   toast('已切换到：' + c.label, 2800);
   if (S.room) await runQuery({ refetch: true });
-  else toast('通道就绪，接着填楼栋号和房间号就能查了', 3400);
+  else toast('通道就绪，接着在「房间设置」里选楼栋和房间就能查了', 3400);
 }
 
 function renderChannelNote() {
@@ -620,32 +633,281 @@ function renderChannelNote() {
   } else el.textContent = '当前：直连 pay.wxstc.cn —— 需要同源部署；在 Pages 上会被 CORS 拦，请改用中转';
 }
 
-/* ------------------------------------------------------------------ 导出 */
+/* ------------------------------------------------------------------ 抽屉 */
+function openDrawer(which) {
+  const drawer = $('drawer');
+  const scrim = $('scrim');
+  if (!drawer) return;
+  const room = $('panel-room');
+  const chan = $('panel-channel');
+  const title = $('drawer-title');
+  if (room) room.hidden = which !== 'room';
+  if (chan) chan.hidden = which !== 'channel';
+  if (title) title.textContent = which === 'channel' ? '中转通道' : '房间设置';
+  drawer.hidden = false;
+  drawer.setAttribute('aria-hidden', 'false');
+  if (scrim) scrim.hidden = false;
+  document.body.classList.add('no-scroll');
+}
+
+function closeDrawer() {
+  const drawer = $('drawer');
+  const scrim = $('scrim');
+  if (drawer) { drawer.hidden = true; drawer.setAttribute('aria-hidden', 'true'); }
+  if (scrim) scrim.hidden = true;
+  document.body.classList.remove('no-scroll');
+}
+
+/* ------------------------------------------------------------------ 导出（先预览再下载） */
+let pvKind = 'xlsx';
+let pvView = 'summary';
+
+function viewForTab() {
+  if (S.tab === 'person') return 'person';
+  return S.tab === 'detail' ? 'detail' : 'summary';
+}
+
+function currentSnapshot(view) {
+  return {
+    roomDesc: roomDesc(),
+    label: S.range.label,
+    items: S.items,
+    notes: S.notes,
+    view: view || 'all',
+    person: S.person,
+  };
+}
+
 function guardExport() {
   if (!S.room) { toast('先设置房间'); return false; }
   if (!S.items.length) { toast('当前没有可导出的记录'); return false; }
   return true;
 }
 
-function snapshot() {
-  return {
-    roomDesc: roomDesc(),
-    label: S.range.label,
-    items: S.items,
-    notes: S.notes,
-  };
+function cellText(t, col, value) {
+  const a = t.align[col];
+  if (a === 'num') {
+    const u = t.unit && t.unit[col];
+    if (u === '%') return (Number(value) || 0).toFixed(1) + '%';
+    if (u === 'int') return String(Math.trunc(Number(value) || 0));
+    return num(value).toFixed(2);
+  }
+  return String(value == null ? '' : value);
 }
 
-function exportExcel() {
-  if (!guardExport()) return;
-  try { downloadExcel(snapshot()); toast('已导出 Excel'); }
-  catch (err) { toast('导出失败：' + (err && err.message ? err.message : err), 4000); }
+function previewHtml(t) {
+  const limit = 200;
+  const rows = t.rows.slice(0, limit);
+  const head = '<div class="scroll pv-scroll"><table class="pv-table"><thead><tr>' +
+    t.head.map((h) => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
+    rows.map((row) => '<tr>' + row.map((c, i) =>
+      '<td' + (t.align[i] === 'num' ? ' class="num"' : t.align[i] === 'idx' ? ' class="idx"' : '') + '>' +
+      esc(cellText(t, i, c)) + '</td>').join('') + '</tr>').join('') +
+    '</tbody>' + (t.foot
+      ? '<tfoot class="tfoot"><tr>' + t.foot.map((c, i) =>
+        '<td' + (t.align[i] === 'num' ? ' class="num"' : '') + '>' + esc(cellText(t, i, c)) + '</td>').join('') + '</tr></tfoot>'
+      : '') + '</table></div>';
+  const more = t.rows.length > limit
+    ? '<div class="hint">预览只显示前 ' + limit + ' 条，导出文件里是全部 ' + t.rows.length + ' 条。</div>'
+    : '';
+  return head + more;
 }
 
-function exportMarkdown() {
+function openPreview(kind) {
   if (!guardExport()) return;
-  try { downloadMarkdown(snapshot()); toast('已导出 Markdown'); }
-  catch (err) { toast('导出失败：' + (err && err.message ? err.message : err), 4000); }
+  const view = viewForTab();
+  if (view === 'person' && !S.person) { toast('先在「个人充值记录」里选一个账号'); return; }
+  const snap = currentSnapshot(view);
+  const t = viewTable(snap);
+  pvKind = kind;
+  pvView = view;
+  const title = $('pv-title');
+  if (title) title.textContent = (kind === 'xlsx' ? '导出 Excel · ' : '导出 Markdown · ') + (VIEWS[t.key] || {}).name;
+  const meta = $('pv-meta');
+  if (meta) {
+    meta.innerHTML = '正在导出的表：<b>' + esc(t.title) + '</b>' +
+      (t.note ? ' · ' + esc(t.note) : '') +
+      ' · 房间 <b>' + esc(roomDesc()) + '</b> · 范围 <b>' + esc(S.range.label) + '</b> · 共 <b>' +
+      (t.rows.length) + '</b> 条';
+  }
+  const body = $('pv-body');
+  if (body) body.innerHTML = previewHtml(t);
+  const note = $('pv-note');
+  if (note) note.textContent = '确认后开始下载：' + fileName(roomDesc(), S.range.label, kind === 'xlsx' ? 'xlsx' : 'md', view);
+  const ok = $('pv-ok');
+  if (ok) ok.textContent = kind === 'xlsx' ? '确认导出 Excel' : '确认导出 Markdown';
+  const pv = $('pv');
+  if (pv) pv.hidden = false;
+  document.body.classList.add('no-scroll');
+}
+
+function closePreview() {
+  const pv = $('pv');
+  if (pv) pv.hidden = true;
+  document.body.classList.remove('no-scroll');
+}
+
+function doExport() {
+  const snap = currentSnapshot(pvView);
+  try {
+    if (pvKind === 'xlsx') { downloadExcel(snap); toast('已导出 Excel · ' + (VIEWS[pvView] || {}).name); }
+    else { downloadMarkdown(snap); toast('已导出 Markdown · ' + (VIEWS[pvView] || {}).name); }
+    closePreview();
+  } catch (err) {
+    toast('导出失败：' + (err && err.message ? err.message : err), 4000);
+  }
+}
+
+/* ------------------------------------------------------------------ 新用户引导 */
+const G = { step: 1, year: '', loudong: '', rooms: [], loudongs: [] };
+
+function guideOpen() {
+  const box = $('guide');
+  if (!box) return;
+  box.hidden = false;
+  document.body.classList.add('no-scroll');
+  guideGo(1);
+}
+
+function guideClose(markDone) {
+  const box = $('guide');
+  if (box) box.hidden = true;
+  document.body.classList.remove('no-scroll');
+  if (markDone) store.set(KEY.guide, { done: 1, at: Date.now() });
+}
+
+function guideGo(step) {
+  G.step = step;
+  [1, 2, 3, 4].forEach((n) => {
+    const el = $('gstep-' + n);
+    if (el) el.hidden = n !== step;
+  });
+  const dots = document.querySelectorAll('#guide-dots .dot');
+  dots.forEach((d, i) => d.classList.toggle('on', i === step - 1));
+  const prev = $('btn-guide-prev');
+  if (prev) prev.hidden = step === 1;
+  const next = $('btn-guide-next');
+  if (next) {
+    next.hidden = step >= 3;
+    next.textContent = step === 2 ? '下一步：选楼栋' : '下一步';
+  }
+  if (step === 2) {
+    const input = $('in-enroll');
+    if (input && !input.value) input.value = G.year || store.get(KEY.enroll, '') || '';
+  }
+  if (step === 3) loadGuideRooms();
+}
+
+async function loadGuideRooms() {
+  const box = $('guide-loudong');
+  const note = $('guide-loudong-note');
+  if (!box) return;
+  if (G.loudongs.length) { renderGuideLoudongs(); return; }
+  if (note) note.textContent = '正在从缴费平台读取楼栋列表…';
+  box.innerHTML = '<div class="empty"><span class="spin"></span>读取中…</div>';
+  try {
+    const cfg = readRoomInputs();
+    const rows = await api.allRooms(cfg.xiaoquId, cfg.datasource);
+    const map = new Map();
+    rows.forEach((r) => {
+      const n = api.loudongNumber(r.loudong);
+      if (!n) return;
+      if (!map.has(n)) map.set(n, { n, name: r.loudong || (n + ' 号楼'), count: 0 });
+      map.get(n).count += 1;
+    });
+    G.rooms = rows;
+    G.loudongs = Array.from(map.values()).sort((a, b) => a.n - b.n);
+    renderGuideLoudongs();
+  } catch (err) {
+    if (note) note.textContent = '读取失败：' + (err && err.message ? err.message : err);
+    box.innerHTML = '<div class="empty">没读到楼栋列表，请先回上一步确认通道可用。</div>';
+    revealChannel(err);
+  }
+}
+
+function renderGuideLoudongs() {
+  const box = $('guide-loudong');
+  const note = $('guide-loudong-note');
+  if (!box) return;
+  if (!G.loudongs.length) {
+    note.textContent = '没有读到楼栋';
+    box.innerHTML = '<div class="empty">接口没返回楼栋列表。</div>';
+    return;
+  }
+  if (note) note.textContent = '共 ' + G.loudongs.length + ' 个楼栋 · 点一下继续';
+  box.innerHTML = G.loudongs.map((x) =>
+    '<button class="room-item" type="button" data-gloudong="' + x.n + '">' + esc(x.name) +
+    ' <span class="mini">' + x.count + ' 间</span></button>').join('');
+}
+
+function guidePickLoudong(n) {
+  G.loudong = String(n);
+  const ln = Number(n);
+  const rows = G.rooms
+    .filter((r) => api.loudongNumber(r.loudong) === ln)
+    .map((r) => ({ id: r.roomId, short: shortRoomName(r.room, G.loudong) }))
+    .filter((r) => /^\d{2,}$/.test(r.short))
+    .sort((a, b) => ((Number(a.short) || 0) - (Number(b.short) || 0)) || (a.short < b.short ? -1 : 1));
+  const box = $('guide-room');
+  const note = $('guide-room-note');
+  if (note) note.textContent = G.loudong + ' 号楼 · 共 ' + rows.length + ' 间 · 点房间号完成引导';
+  if (box) {
+    box.innerHTML = rows.length
+      ? rows.map((r) => '<button class="room-item" type="button" data-groom="' + esc(r.short) + '">' +
+          esc(r.short) + '</button>').join('')
+      : '<div class="empty">这个楼栋下没有可选房间。</div>';
+  }
+  guideGo(4);
+}
+
+function applyEnrollYear(year) {
+  const r = api.yearStart(year);
+  G.year = year ? String(r.year) : '';
+  if (year) {
+    store.set(KEY.enroll, G.year);
+    $('in-start').value = r.start;
+    $('in-end').value = r.end;
+  } else {
+    $('in-start').value = '';
+    $('in-end').value = '';
+  }
+  rangeFromInputs();
+  return r;
+}
+
+async function guideFinish(roomNo) {
+  const year = $('in-enroll') ? String($('in-enroll').value || '').trim() : '';
+  applyEnrollYear(year);
+  $('in-loudong').value = G.loudong;
+  $('in-room').value = roomNo;
+  guideClose(true);
+  toast('引导完成，正在查 ' + G.loudong + ' 号楼 ' + roomNo + ' 室', 3000);
+  await saveRoom();
+}
+
+function guideNext() {
+  if (G.step === 1) {
+    const ch = api.getChannel();
+    const needRelay = ch.mode === 'direct' && /\.github\.io$/i.test(location.hostname);
+    if (needRelay) {
+      toast('先点「检测可用中转」选一个，或点「先用示例数据看看」', 4200);
+      return;
+    }
+    guideGo(2);
+    return;
+  }
+  if (G.step === 2) {
+    const raw = String($('in-enroll').value || '').trim();
+    if (raw && !/^(19|20)\d{2}$/.test(raw)) { toast('入学年份填 4 位数字，例如 2022'); return; }
+    const r = applyEnrollYear(raw);
+    const note = $('guide-year-note');
+    if (note) {
+      note.textContent = raw
+        ? '查询开始时间已设为 ' + r.start.replace('T', ' ') + '，结束时间 ' + r.end.replace('T', ' ')
+        : '没有填年份，按「全部」查询。';
+    }
+    guideGo(3);
+  }
 }
 
 /* ------------------------------------------------------------------ 通道 */
@@ -718,8 +980,70 @@ function bind() {
 
   $('btn-refresh-room').addEventListener('click', () => loadBalance());
   $('btn-query').addEventListener('click', () => runQuery({ refetch: false }));
-  $('btn-export-xlsx').addEventListener('click', exportExcel);
-  $('btn-export-md').addEventListener('click', exportMarkdown);
+  $('btn-export-xlsx').addEventListener('click', () => openPreview('xlsx'));
+  $('btn-export-md').addEventListener('click', () => openPreview('md'));
+
+  // 抽屉：房间设置 / 中转通道
+  const openRoom = $('btn-open-room');
+  if (openRoom) openRoom.addEventListener('click', () => openDrawer('room'));
+  const openChan = $('btn-open-channel');
+  if (openChan) openChan.addEventListener('click', () => openDrawer('channel'));
+  const closeBtn = $('btn-close-drawer');
+  if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+  const scrim = $('scrim');
+  if (scrim) scrim.addEventListener('click', closeDrawer);
+
+  // 导出预览
+  const pvOk = $('pv-ok');
+  if (pvOk) pvOk.addEventListener('click', doExport);
+  const pvCancel = $('pv-cancel');
+  if (pvCancel) pvCancel.addEventListener('click', closePreview);
+  const pvClose = $('pv-close');
+  if (pvClose) pvClose.addEventListener('click', closePreview);
+
+  // 引导
+  const gDetect = $('guide-detect');
+  if (gDetect) gDetect.addEventListener('click', () => detectRelays({ box: 'guide-cands', note: 'guide-detect-note', btn: 'guide-detect' }));
+  const gDemo = $('guide-demo');
+  if (gDemo) {
+    gDemo.addEventListener('click', () => {
+      const saved = api.setChannel({ mode: 'demo', relayBase: '' });
+      store.set(KEY.channel, saved);
+      renderChips();
+      const note = $('guide-detect-note');
+      if (note) note.textContent = '已切到示例数据（只看界面），点「下一步」继续';
+      guideGo(2);
+    });
+  }
+  const gNext = $('btn-guide-next');
+  if (gNext) gNext.addEventListener('click', guideNext);
+  const gPrev = $('btn-guide-prev');
+  if (gPrev) gPrev.addEventListener('click', () => guideGo(Math.max(1, G.step - 1)));
+  const gSkip = $('btn-guide-skip');
+  if (gSkip) gSkip.addEventListener('click', () => { guideClose(true); toast('已跳过引导，可随时在页面底部点「重新查看使用引导」'); });
+  const gLoudong = $('guide-loudong');
+  if (gLoudong) {
+    gLoudong.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-gloudong]');
+      if (btn) guidePickLoudong(btn.dataset.gloudong);
+    });
+  }
+  const gRoom = $('guide-room');
+  if (gRoom) {
+    gRoom.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-groom]');
+      if (btn) guideFinish(btn.dataset.groom);
+    });
+  }
+  const gCands = $('guide-cands');
+  if (gCands) {
+    gCands.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-pick]');
+      if (btn) pickRelay(Number(btn.dataset.pick));
+    });
+  }
+  const reopen = $('btn-open-guide');
+  if (reopen) reopen.addEventListener('click', (e) => { if (e) e.preventDefault(); G.loudongs = []; G.rooms = []; guideOpen(); });
 
   const btnClear = $('btn-clear-local');
   if (btnClear) {
@@ -827,7 +1151,7 @@ function bind() {
 }
 
 /* ------------------------------------------------------------------ 启动 */
-function boot() {
+async function boot() {
   const params = new URLSearchParams(location.search);
   const qRelay = params.get('relay');
   const qMode = params.get('mode');
@@ -879,10 +1203,16 @@ function boot() {
   renderBalance();
   renderData();
 
+  const done = store.get(KEY.guide, null);
+  const forced = params.get('guide') === '1';
+  const hidden = params.get('guide') === '0';
+  const hasRoom = !!(S.cfg.loudongNo && S.cfg.roomNo);
+
   // 有存过的房间就自动恢复，省掉每次手填
-  if (S.cfg.loudongNo && S.cfg.roomNo) {
-    saveRoom();
-  }
+  if (hasRoom) await saveRoom();
+
+  // 新用户（没有房间设置、也没看完引导）默认弹出引导
+  if (forced || (!hidden && !(done && done.done))) guideOpen();
 }
 
 boot();

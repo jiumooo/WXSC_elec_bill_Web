@@ -5,7 +5,7 @@
  * 因此多人同时使用、各自查询自己的房间时互不影响。
  * ========================================================================== */
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 /* ------------------------------------------------------------------ 常量 */
 const APPID = 'AABBCC01';
@@ -598,6 +598,18 @@ export function quickRange(kind, now = new Date()) {
     return { start: toLocalInput(s), end: toLocalInput(now), label: '今年' };
   }
   return { start: '', end: '', label: '全部' };
+}
+
+/** 入学年份 → 查询开始时间（该年 1 月 1 日 00:00:00，覆盖整年） */
+export function yearStart(year, now = new Date()) {
+  const y = Number(year);
+  const yy = Number.isFinite(y) && y >= 2000 && y <= 2100 ? Math.trunc(y) : now.getFullYear();
+  return {
+    start: yy + '-01-01T00:00:00',
+    end: toLocalInput(now),
+    label: yy + ' 年起',
+    year: yy,
+  };
 }
 
 export function rangeLabel(start, end) {

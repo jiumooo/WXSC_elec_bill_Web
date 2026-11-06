@@ -1,10 +1,19 @@
 /* ==========================================================================
- * 导出：Markdown / Excel
+ * 导出：Markdown / Excel（1.1.0：按「当前选中的那张表」导出）
  * 输入是「一次查询的快照」，与页面上展示的数据完全一致，
  * 不存在二次请求，因此并发查询不会互相污染导出内容。
+ *
+ * snapshot = { roomDesc, label, items, notes, view, person }
+ *   view: 'summary' | 'detail' | 'person' | 'all'（缺省 all = 汇总 + 明细）
  * ========================================================================== */
 import { buildXlsx, STYLE } from './xlsx.js';
 import { summarize, sumAmount } from './api.js';
+
+export const VIEWS = {
+  summary: { name: '每人汇总', title: '每人充值汇总', file: '每人汇总' },
+  detail: { name: '充值明细', title: '充值明细（按时间倒序）', file: '充值明细' },
+  person: { name: '个人充值', title: '个人充值记录', file: '个人充值' },
+};
 
 export function safeName(text, fallback = 'export') {
   const out = String(text == null ? '' : text)
@@ -20,130 +29,227 @@ export function stamp() {
     p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
 
-export function fileName(roomDesc, label, ext) {
-  return '充值台账-' + safeName(roomDesc, '房间') + '-' + safeName(label, '全部') + '-' + stamp() + '.' + ext;
+export function fileName(roomDesc, label, ext, view) {
+  const v = view && VIEWS[view] ? VIEWS[view].file + '-' : '';
+  return '充值台账-' + safeName(roomDesc, '房间') + '-' + v + rangeToken(label) + '-' + stamp() + '.' + ext;
+}
+
+/** 文件名里的范围：只保留日期部分，压缩成 2022-01-01~2026-11-07 这种短标签 */
+export function rangeToken(label) {
+  const raw = String(label == null ? '' : label).trim();
+  if (!raw || raw === '全部') return '全部';
+  const parts = raw.split('~').map((s) => s.trim());
+  if (parts.length === 2) {
+    const d = (s, edge) => {
+      const m = /\d{4}-\d{2}-\d{2}/.exec(s);
+      if (m) return m[0];
+      return edge === 'start' ? s : s;
+    };
+    const a = d(parts[0], 'start');
+    const b = d(parts[1], 'end');
+    return safeName(a + '~' + b, '范围');
+  }
+  return safeName(raw.replace(/\s+/g, ''), '范围');
+}
+
+/* 每个视图对应的数据表：供导出与页面预览共用，保证「预览即导出」 */
+export function viewTable(snapshot) {
+  const { roomDesc, label, items = [], notes = {}, view = 'all', person = '' } = snapshot;
+  const summary = summarize(items, notes);
+  const total = sumAmount(items);
+  const meta = { roomDesc, label, items, summary, total };
+
+  if (view === 'summary') {
+    return Object.assign(meta, {
+      key: 'summary',
+      title: '每人充值汇总',
+      head: ['#', '备注（本机）', '账号', '笔数', '金额(元)', '占比', '首次充值', '最近充值'],
+      align: ['idx', 'text', 'text', 'num', 'num', 'num', 'text', 'text'],
+      rows: summary.map((r, i) => [i + 1, r.label || '', r.buyer, r.count, r.amount, r.ratio, r.first, r.last]),
+      foot: ['', '合计', '', items.length, total, 100, '', ''],
+      unit: { 3: 'int', 4: '元', 5: '%' },
+    });
+  }
+
+  if (view === 'person') {
+    const rows = items.filter((r) => r.buyer === person);
+    const sum = rows.reduce((a, r) => a + (Number(r.amt) || 0), 0);
+    return Object.assign(meta, {
+      key: 'person',
+      title: '个人充值记录',
+      head: ['#', '充值时间', '金额(元)', '记录号', '外部订单号'],
+      align: ['idx', 'text', 'num', 'text', 'text'],
+      rows: rows.map((r, i) => [i + 1, r.time, r.amt, r.recNo, r.outNo]),
+      foot: ['', '合计', sum, rows.length + ' 笔', ''],
+      unit: { 2: '元' },
+      note: '账号 ' + (person || '—') + (notes[person] ? '（' + notes[person] + '）' : ''),
+      count: rows.length,
+    });
+  }
+
+  // detail
+  return Object.assign(meta, {
+    key: 'detail',
+    title: '充值明细（按时间倒序）',
+    head: ['#', '充值时间', '金额(元)', '备注（本机）', '账号', '记录号', '外部订单号'],
+    align: ['idx', 'text', 'num', 'text', 'text', 'text', 'text'],
+    rows: items.map((r, i) => [i + 1, r.time, r.amt, notes[r.buyer] || '', r.buyer, r.recNo, r.outNo]),
+    foot: null,
+    unit: { 2: '元' },
+  });
+}
+
+/* ------------------------------------------------------------------ Markdown */
+function mdCell(v) {
+  return String(v == null ? '' : v).replace(/\|/g, '\\|').replace(/\n+/g, ' ').trim();
 }
 
 export function buildMarkdown(snapshot) {
-  const { roomDesc, label, items, notes = {} } = snapshot;
+  const { roomDesc, label, items = [], notes = {} } = snapshot;
+  const view = snapshot.view || 'all';
   const summary = summarize(items, notes);
   const total = sumAmount(items);
   const lines = [];
 
-  lines.push('# 电费充值台账 · ' + roomDesc);
-  lines.push('');
-  lines.push('| 项目 | 值 |');
-  lines.push('| --- | --- |');
-  lines.push('| 房间 | ' + roomDesc + ' |');
-  lines.push('| 时间范围 | ' + label + ' |');
-  lines.push('| 笔数 | ' + items.length + ' |');
-  lines.push('| 合计金额 | ' + total.toFixed(2) + ' 元 |');
-  lines.push('| 涉及人数 | ' + summary.length + ' |');
-  if (items.length) {
-    const times = items.map((r) => r.time).sort();
-    lines.push('| 时间跨度 | ' + times[0] + ' ~ ' + times[times.length - 1] + ' |');
+  const head = (title) => {
+    lines.push('# 电费充值台账 · ' + roomDesc);
+    lines.push('');
+    if (title) lines.push('## ' + title);
+    if (title) lines.push('');
+    lines.push('| 项目 | 值 |');
+    lines.push('| --- | --- |');
+    lines.push('| 房间 | ' + mdCell(roomDesc) + ' |');
+    lines.push('| 时间范围 | ' + mdCell(label) + ' |');
+    lines.push('| 笔数 | ' + items.length + ' |');
+    lines.push('| 合计金额 | ' + total.toFixed(2) + ' 元 |');
+    lines.push('| 涉及人数 | ' + summary.length + ' |');
+    if (items.length) {
+      const times = items.map((r) => r.time).sort();
+      lines.push('| 时间跨度 | ' + mdCell(times[0]) + ' ~ ' + mdCell(times[times.length - 1]) + ' |');
+    }
+    lines.push('| 导出时间 | ' + new Date().toLocaleString('zh-CN', { hour12: false }) + ' |');
+    lines.push('');
+  };
+
+  const render = (t) => {
+    const fmt = (i, v) => {
+      if (t.align[i] !== 'num') return mdCell(v);
+      const u = t.unit && t.unit[i];
+      if (u === '%') return (Number(v) || 0).toFixed(1) + '%';
+      if (u === 'int') return String(Math.trunc(Number(v) || 0));
+      return (Number(v) || 0).toFixed(2);
+    };
+    lines.push('| ' + t.head.map(mdCell).join(' | ') + ' |');
+    lines.push('| ' + t.align.map((a) => (a === 'num' || a === 'idx' ? '---:' : '---')).join(' | ') + ' |');
+    t.rows.forEach((row) => {
+      lines.push('| ' + row.map((c, i) => (t.align[i] === 'text' && i === 2 && t.key === 'summary')
+        ? '`' + mdCell(c) + '`' : fmt(i, c)).join(' | ') + ' |');
+    });
+    if (t.foot) lines.push('| ' + t.foot.map((c, i) => fmt(i, c)).join(' | ') + ' |');
+    lines.push('');
+  };
+
+  if (view === 'all') {
+    lines.push('# 电费充值台账 · ' + roomDesc);
+    lines.push('');
+    lines.push('| 项目 | 值 |');
+    lines.push('| --- | --- |');
+    lines.push('| 房间 | ' + mdCell(roomDesc) + ' |');
+    lines.push('| 时间范围 | ' + mdCell(label) + ' |');
+    lines.push('| 笔数 | ' + items.length + ' |');
+    lines.push('| 合计金额 | ' + total.toFixed(2) + ' 元 |');
+    lines.push('| 涉及人数 | ' + summary.length + ' |');
+    lines.push('| 导出时间 | ' + new Date().toLocaleString('zh-CN', { hour12: false }) + ' |');
+    lines.push('');
+    lines.push('## 一、每人充值汇总');
+    lines.push('');
+    render(viewTable(Object.assign({}, snapshot, { view: 'summary' })));
+    lines.push('## 二、充值明细（按时间倒序）');
+    lines.push('');
+    render(viewTable(Object.assign({}, snapshot, { view: 'detail' })));
+    return lines.join('\n');
   }
-  lines.push('| 导出时间 | ' + new Date().toLocaleString('zh-CN', { hour12: false }) + ' |');
-  lines.push('');
-  lines.push('## 一、每人充值汇总');
-  lines.push('');
-  lines.push('| # | 备注 | 账号 | 笔数 | 金额(元) | 占比 | 首次充值 | 最近充值 |');
-  lines.push('| ---: | --- | --- | ---: | ---: | ---: | --- | --- |');
-  summary.forEach((r, i) => {
-    lines.push('| ' + (i + 1) + ' | ' + (r.label || '') + ' | `' + r.buyer + '` | ' + r.count +
-      ' | ' + r.amount.toFixed(2) + ' | ' + r.ratio.toFixed(1) + '% | ' + r.first + ' | ' + r.last + ' |');
-  });
-  lines.push('| | **合计** | | **' + items.length + '** | **' + total.toFixed(2) + '** | 100% | | |');
-  lines.push('');
-  lines.push('## 二、充值明细（按时间倒序）');
-  lines.push('');
-  lines.push('| # | 充值时间 | 金额(元) | 备注 | 账号 | 记录号 | 外部订单号 |');
-  lines.push('| ---: | --- | ---: | --- | --- | --- | --- |');
-  items.forEach((r, i) => {
-    lines.push('| ' + (i + 1) + ' | ' + r.time + ' | ' + r.amt.toFixed(2) + ' | ' + (notes[r.buyer] || '') +
-      ' | `' + r.buyer + '` | ' + r.recNo + ' | ' + r.outNo + ' |');
-  });
-  lines.push('');
+
+  head('');
+  if (view === 'person' && snapshot.person) {
+    lines.push('当前账号：`' + mdCell(snapshot.person) + '`' + (notes[snapshot.person] ? '（' + mdCell(notes[snapshot.person]) + '）' : ''));
+    lines.push('');
+  }
+  render(viewTable(snapshot));
   return lines.join('\n');
 }
 
-export function buildExcel(snapshot) {
-  const { roomDesc, label, items, notes = {} } = snapshot;
+/* ------------------------------------------------------------------ Excel */
+const COLS = {
+  summary: [6, 18, 14, 8, 12, 10, 22, 22],
+  detail: [7, 21, 12, 18, 14, 12, 16],
+  person: [7, 21, 12, 12, 16],
+};
+
+function numStyle(t, col, value) {
+  const u = t.unit && t.unit[col];
+  if (u === '%') return { v: (Number(value) || 0) / 100, t: 'n', s: STYLE.PCT };
+  if (u === 'int') return { v: Math.trunc(Number(value) || 0), t: 'n', s: STYLE.INT };
+  return { v: Number(value) || 0, t: 'n', s: STYLE.NUM };
+}
+
+function sheetFor(t, name, active) {
+  const rows = [t.head.map((h) => ({ v: h, s: STYLE.HEAD }))];
+  t.rows.forEach((row) => {
+    rows.push(row.map((c, i) => {
+      const a = t.align[i];
+      if (a === 'num') return numStyle(t, i, c);
+      if (a === 'idx') return { v: Number(c) || 0, t: 'n', s: STYLE.CENTER };
+      return { v: c == null ? '' : String(c), s: STYLE.TEXT };
+    }));
+  });
+  if (t.foot) {
+    rows.push(t.foot.map((c, i) => {
+      const a = t.align[i];
+      if (a === 'num') return numStyle(t, i, c);
+      return { v: c == null ? '' : String(c), s: STYLE.TEXT };
+    }));
+  }
+  return { name, rows, cols: COLS[t.key] || COLS.detail, freeze: 1, active: !!active };
+}
+
+function infoSheet(snapshot) {
+  const { roomDesc, label, items = [], notes = {}, person = '' } = snapshot;
   const summary = summarize(items, notes);
   const total = sumAmount(items);
+  return {
+    name: '信息',
+    cols: [16, 38],
+    rows: [
+      [{ v: '项目', s: STYLE.HEAD }, { v: '值', s: STYLE.HEAD }],
+      [{ v: '房间', s: STYLE.TEXT }, { v: roomDesc, s: STYLE.TEXT }],
+      [{ v: '时间范围', s: STYLE.TEXT }, { v: label, s: STYLE.TEXT }],
+      [{ v: '笔数', s: STYLE.TEXT }, { v: items.length, t: 'n', s: STYLE.NUM }],
+      [{ v: '合计金额(元)', s: STYLE.TEXT }, { v: total, t: 'n', s: STYLE.NUM }],
+      [{ v: '涉及人数', s: STYLE.TEXT }, { v: summary.length, t: 'n', s: STYLE.NUM }],
+      ...(person ? [[{ v: '当前账号', s: STYLE.TEXT }, { v: person, s: STYLE.TEXT }]] : []),
+      [{ v: '导出时间', s: STYLE.TEXT }, { v: new Date().toLocaleString('zh-CN', { hour12: false }), s: STYLE.TEXT }],
+    ],
+  };
+}
 
-  const summaryRows = [[
-    { v: '#', s: STYLE.HEAD },
-    { v: '备注', s: STYLE.HEAD },
-    { v: '账号', s: STYLE.HEAD },
-    { v: '笔数', s: STYLE.HEAD },
-    { v: '金额(元)', s: STYLE.HEAD },
-    { v: '占比', s: STYLE.HEAD },
-    { v: '首次充值', s: STYLE.HEAD },
-    { v: '最近充值', s: STYLE.HEAD },
-  ]];
-
-  summary.forEach((r, i) => {
-    summaryRows.push([
-      { v: i + 1, t: 'n', s: STYLE.CENTER },
-      { v: r.label || '', s: STYLE.TEXT },
-      { v: r.buyer, s: STYLE.TEXT },
-      { v: r.count, t: 'n', s: STYLE.NUM },
-      { v: r.amount, t: 'n', s: STYLE.NUM },
-      { v: (Number(r.ratio) || 0) / 100, t: 'n', s: STYLE.PCT },
-      { v: r.first, s: STYLE.TEXT },
-      { v: r.last, s: STYLE.TEXT },
+export function buildExcel(snapshot) {
+  const view = snapshot.view || 'all';
+  if (view === 'all') {
+    return buildXlsx([
+      sheetFor(viewTable(Object.assign({}, snapshot, { view: 'summary' })), '每人汇总', true),
+      sheetFor(viewTable(Object.assign({}, snapshot, { view: 'detail' })), '充值明细', false),
+      infoSheet(snapshot),
     ]);
-  });
-  summaryRows.push([
-    { v: '合计', s: STYLE.TEXT },
-    { v: '', s: STYLE.TEXT },
-    { v: '', s: STYLE.TEXT },
-    { v: items.length, t: 'n', s: STYLE.NUM },
-    { v: total, t: 'n', s: STYLE.NUM },
-    { v: 1, t: 'n', s: STYLE.PCT },
-    { v: '', s: STYLE.TEXT },
-    { v: '', s: STYLE.TEXT },
-  ]);
-
-  const detailRows = [[
-    { v: '序号', s: STYLE.HEAD },
-    { v: '充值时间', s: STYLE.HEAD },
-    { v: '金额(元)', s: STYLE.HEAD },
-    { v: '备注', s: STYLE.HEAD },
-    { v: '账号', s: STYLE.HEAD },
-    { v: '记录号', s: STYLE.HEAD },
-    { v: '外部订单号', s: STYLE.HEAD },
-  ]];
-  items.forEach((r, i) => {
-    detailRows.push([
-      { v: i + 1, t: 'n', s: STYLE.CENTER },
-      { v: r.time, s: STYLE.TEXT },
-      { v: r.amt, t: 'n', s: STYLE.NUM },
-      { v: notes[r.buyer] || '', s: STYLE.TEXT },
-      { v: r.buyer, s: STYLE.TEXT },
-      { v: r.recNo, s: STYLE.TEXT },
-      { v: r.outNo, s: STYLE.TEXT },
-    ]);
-  });
-
-  const infoRows = [
-    [{ v: '项目', s: STYLE.HEAD }, { v: '值', s: STYLE.HEAD }],
-    [{ v: '房间', s: STYLE.TEXT }, { v: roomDesc, s: STYLE.TEXT }],
-    [{ v: '时间范围', s: STYLE.TEXT }, { v: label, s: STYLE.TEXT }],
-    [{ v: '笔数', s: STYLE.TEXT }, { v: items.length, t: 'n', s: STYLE.NUM }],
-    [{ v: '合计金额(元)', s: STYLE.TEXT }, { v: total, t: 'n', s: STYLE.NUM }],
-    [{ v: '涉及人数', s: STYLE.TEXT }, { v: summary.length, t: 'n', s: STYLE.NUM }],
-    [{ v: '导出时间', s: STYLE.TEXT }, { v: new Date().toLocaleString('zh-CN', { hour12: false }), s: STYLE.TEXT }],
-  ];
-
+  }
+  const t = viewTable(snapshot);
   return buildXlsx([
-    { name: '每人汇总', rows: summaryRows, cols: [6, 16, 14, 8, 12, 10, 22, 22], freeze: 1, active: true },
-    { name: '充值明细', rows: detailRows, cols: [7, 21, 12, 14, 14, 12, 16], freeze: 1 },
-    { name: '信息', rows: infoRows, cols: [16, 34], freeze: 1 },
+    sheetFor(t, VIEWS[t.key].name, true),
+    infoSheet(snapshot),
   ]);
 }
 
+/* ------------------------------------------------------------------ 下载 */
 export function download(bytes, filename, mime) {
   const blob = bytes instanceof Blob ? bytes : new Blob([bytes], { type: mime || 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
@@ -160,11 +266,11 @@ export function download(bytes, filename, mime) {
 export function downloadMarkdown(snapshot) {
   const text = buildMarkdown(snapshot);
   download(new Blob([text], { type: 'text/markdown;charset=utf-8' }),
-    fileName(snapshot.roomDesc, snapshot.label, 'md'), 'text/markdown;charset=utf-8');
+    fileName(snapshot.roomDesc, snapshot.label, 'md', snapshot.view), 'text/markdown;charset=utf-8');
 }
 
 export function downloadExcel(snapshot) {
   const bytes = buildExcel(snapshot);
-  download(bytes, fileName(snapshot.roomDesc, snapshot.label, 'xlsx'),
+  download(bytes, fileName(snapshot.roomDesc, snapshot.label, 'xlsx', snapshot.view),
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }

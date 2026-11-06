@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>无锡科技职业技术学院 · 电费查询</title>
-<meta name="description" content="无锡科技职业技术学院电费查询：当前余额、房间设置、充值记录查询、导出 Excel / Markdown。纯静态页面，所有人的设置与查询互不影响。">
+<meta name="description" content="无锡科技职业技术学院电费查询：当前余额、充值记录查询、每人总金额、导出 Excel / Markdown。纯静态页面，所有人的设置与查询互不影响。">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231f6feb'/%3E%3Cpath d='M55 16 32 56h17l-6 28 25-42H50z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/style.css">
@@ -21,10 +21,10 @@
         <div class="sub">静态页面 · 数据实时取自学校缴费平台 · 设置只保存在你自己的浏览器</div>
       </div>
     </div>
-    <div class="chips">
-      <span class="chip" id="chip-version">v1.0.0</span>
-      <span class="chip" id="chip-channel">通道：直连</span>
-      <span class="chip chip-room" id="chip-room">未设置房间</span>
+    <div class="head-actions">
+      <span class="chip" id="chip-version">v1.1.0</span>
+      <button class="btn mini ghost" id="btn-open-room" type="button" title="楼栋号 / 房间号 / 校区 / 数据源">房间设置</button>
+      <button class="btn mini ghost" id="btn-open-channel" type="button" title="取数通道与中转部署说明">中转通道</button>
     </div>
   </div>
 </div>
@@ -55,56 +55,10 @@
         <div class="v" id="stat-ratio">—<small>%</small></div>
       </div>
     </div>
-    <div class="hint" id="balance-note">先设置楼栋号和房间号，然后就能看到实时余额。</div>
+    <div class="hint" id="balance-note">先点右上角「房间设置」选好楼栋和房间，然后就能看到实时余额。</div>
   </section>
 
-  <!-- 房间设置 -->
-  <section class="card" id="card-room">
-    <div class="card-head">
-      <h2>房间设置</h2>
-    </div>
-    <form class="row" id="form-room" autocomplete="off">
-      <div class="field">
-        <label class="f" for="in-loudong">楼栋号</label>
-        <input type="number" id="in-loudong" inputmode="numeric" min="1" max="200" placeholder="例如 3">
-      </div>
-      <div class="field">
-        <label class="f" for="in-room">房间号</label>
-        <input type="number" id="in-room" inputmode="numeric" min="1" max="99999" placeholder="例如 101">
-      </div>
-      <div class="field">
-        <label class="f" for="in-xiaoqu">小区 / 校区 ID</label>
-        <input type="number" id="in-xiaoqu" inputmode="numeric" min="1" placeholder="1">
-      </div>
-      <div class="field">
-        <label class="f" for="in-datasource">数据源</label>
-        <input type="text" id="in-datasource" placeholder="cg1_1">
-      </div>
-      <div class="field field-action">
-        <button class="btn primary" id="btn-save-room" type="submit">保存并重新解析</button>
-      </div>
-    </form>
-    <div class="bar room-bar">
-      <button class="btn" id="btn-room-list" type="button">查询可用房间</button>
-      <span class="bar-note" id="room-list-note">先填楼栋号再点，列出该楼全部房间；不填楼栋号则先列楼栋</span>
-    </div>
-    <div class="roomlist" id="room-list-wrap" hidden>
-      <div class="roomlist-body" id="room-list"></div>
-      <div class="roomlist-foot">
-        <button class="btn mini ghost" id="btn-room-list-close" type="button">收起</button>
-      </div>
-    </div>
-    <div class="hint">
-      楼栋号与房间号只填数字，页面会自动拼成完整房间编码去匹配（3 号楼 101 室 → 楼栋 3、房间 101）。
-      设置只写入本机 localStorage，不会上传，也不会影响别人。
-    </div>
-    <div class="recent" id="recent-rooms" hidden>
-      <span class="recent-label">本机用过的房间</span>
-      <div class="recent-list" id="recent-list"></div>
-    </div>
-  </section>
-
-  <!-- 充值记录查询 -->
+  <!-- 充值记录查询（含三张表） -->
   <section class="card" id="card-query">
     <div class="card-head">
       <h2>充值记录查询 <span class="tag" id="q-tag">全部</span></h2>
@@ -127,20 +81,20 @@
       <button class="btn" type="button" data-range="30d">近 30 天</button>
       <button class="btn" type="button" data-range="year">今年</button>
       <button class="btn" type="button" data-range="all">全部</button>
-      <span class="bar-sep"></span>
-      <button class="btn" type="button" id="btn-export-xlsx">导出 Excel</button>
-      <button class="btn" type="button" id="btn-export-md">导出 Markdown</button>
     </div>
-    <div class="hint" id="q-hint">导出的是当前这次查询的结果，不会再请求一次接口。</div>
-  </section>
 
-  <!-- 数据 -->
-  <section class="card" id="card-data">
-    <div class="tabs" role="tablist">
-      <button class="tab on" role="tab" data-tab="summary" type="button">每人总金额表</button>
-      <button class="tab" role="tab" data-tab="detail" type="button">充值明细表</button>
-      <button class="tab" role="tab" data-tab="person" type="button">个人充值记录</button>
+    <div class="tabs-row">
+      <div class="tabs" role="tablist">
+        <button class="tab on" role="tab" data-tab="summary" type="button">每人总金额表</button>
+        <button class="tab" role="tab" data-tab="detail" type="button">充值明细表</button>
+        <button class="tab" role="tab" data-tab="person" type="button">个人充值记录</button>
+      </div>
+      <div class="tabs-actions">
+        <button class="btn mini" type="button" id="btn-export-xlsx">导出 Excel</button>
+        <button class="btn mini" type="button" id="btn-export-md">导出 Markdown</button>
+      </div>
     </div>
+
     <div class="meta" id="data-meta">还没有查询结果。</div>
 
     <div class="pane" id="pane-summary" role="tabpanel">
@@ -160,15 +114,79 @@
       </div>
       <div id="person-body"><div class="empty">还没有查询结果。</div></div>
     </div>
+
+    <div class="hint" id="q-hint">导出的是当前这次查询的结果，导出的表就是你正在看的那张表，不会再请求一次接口。</div>
   </section>
 
-  <!-- 通道 -->
-  <details class="card" id="card-channel">
-    <summary>
-      <span class="summary-title">数据通道与部署说明</span>
-      <span class="tag" id="channel-tag">直连</span>
-    </summary>
-    <div class="channel-body">
+  <div class="footnote">
+    <span id="foot-version">WXSC_elec_bill_Web v1.1.0</span>
+    <span>·</span>
+    <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
+    <span>·</span>
+    <span>备注只写在本机浏览器，不会上传、不会进任何服务器</span>
+    <span>·</span>
+    <a href="#" id="btn-open-guide">重新查看使用引导</a>
+    <span>·</span>
+    <a href="#" id="btn-clear-local">清除本机设置与备注</a>
+    <span>·</span>
+    <a href="https://github.com/jiumooo/WXSC_elec_bill_Web" target="_blank" rel="noopener noreferrer">GitHub</a>
+  </div>
+</main>
+
+<!-- ========== 抽屉：房间设置 / 中转通道 ========== -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+  <div class="drawer-head">
+    <h2 id="drawer-title">房间设置</h2>
+    <button class="btn mini ghost" id="btn-close-drawer" type="button">关闭</button>
+  </div>
+  <div class="drawer-body">
+
+    <!-- 房间设置 -->
+    <section id="panel-room">
+      <form class="row" id="form-room" autocomplete="off">
+        <div class="field">
+          <label class="f" for="in-loudong">楼栋号</label>
+          <input type="number" id="in-loudong" inputmode="numeric" min="1" max="200" placeholder="例如 3">
+        </div>
+        <div class="field">
+          <label class="f" for="in-room">房间号</label>
+          <input type="number" id="in-room" inputmode="numeric" min="1" max="99999" placeholder="例如 101">
+        </div>
+        <div class="field">
+          <label class="f" for="in-xiaoqu">小区 / 校区 ID</label>
+          <input type="number" id="in-xiaoqu" inputmode="numeric" min="1" placeholder="1">
+        </div>
+        <div class="field">
+          <label class="f" for="in-datasource">数据源</label>
+          <input type="text" id="in-datasource" placeholder="cg1_1">
+        </div>
+        <div class="field field-action">
+          <button class="btn primary" id="btn-save-room" type="submit">保存并重新解析</button>
+        </div>
+      </form>
+      <div class="bar room-bar">
+        <button class="btn" id="btn-room-list" type="button">查询可用房间</button>
+        <span class="bar-note" id="room-list-note">先填楼栋号再点，列出该楼全部房间；不填楼栋号则先列楼栋</span>
+      </div>
+      <div class="roomlist" id="room-list-wrap" hidden>
+        <div class="roomlist-body" id="room-list"></div>
+        <div class="roomlist-foot">
+          <button class="btn mini ghost" id="btn-room-list-close" type="button">收起</button>
+        </div>
+      </div>
+      <div class="hint">
+        楼栋号与房间号只填数字，页面会自动拼成完整房间编码去匹配（3 号楼 101 室 → 楼栋 3、房间 101）。
+        设置只写入本机 localStorage，不会上传，也不会影响别人。
+      </div>
+      <div class="recent" id="recent-rooms" hidden>
+        <span class="recent-label">本机用过的房间</span>
+        <div class="recent-list" id="recent-list"></div>
+      </div>
+    </section>
+
+    <!-- 中转通道 -->
+    <section id="panel-channel" hidden>
       <p class="hint">
         <b>为什么不能直接查：</b>学校接口 <code>pay.wxstc.cn</code> 的响应里没有
         <code>Access-Control-Allow-Origin</code>，浏览器会按同源策略把跨域响应丢掉，
@@ -215,21 +233,85 @@
         <button class="btn mini ghost" id="btn-copy-worker" type="button">复制 Worker 代码</button>
       </details>
       <div class="hint" id="channel-note">当前：直连 pay.wxstc.cn</div>
-    </div>
-  </details>
+      <div class="hint"><span class="tag" id="channel-tag">直连</span></div>
+    </section>
 
-  <div class="footnote">
-    <span id="foot-version">WXSC_elec_bill_Web v1.0.0</span>
-    <span>·</span>
-    <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
-    <span>·</span>
-    <span>备注只写在本机浏览器，不会上传、不会进任何服务器</span>
-    <span>·</span>
-    <a href="#" id="btn-clear-local">清除本机设置与备注</a>
-    <span>·</span>
-    <a href="https://github.com/jiumooo/WXSC_elec_bill_Web" target="_blank" rel="noopener noreferrer">GitHub</a>
   </div>
-</main>
+</aside>
+
+<!-- ========== 新用户引导 ========== -->
+<div class="modal guide" id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guide-title">
+  <div class="modal-head">
+    <h3 id="guide-title">开始使用 · 4 步搞定</h3>
+    <button class="btn mini ghost" id="btn-guide-skip" type="button">跳过</button>
+  </div>
+  <div class="guide-dots" id="guide-dots" aria-hidden="true">
+    <span class="dot on"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  </div>
+  <div class="modal-body">
+
+    <div class="gstep" id="gstep-1">
+      <h4>① 先选一条能用的取数通道</h4>
+      <p class="hint">
+        学校接口不允许浏览器跨域直连，GitHub Pages 上必须走一次中转。点下面的按钮自动实测，
+        能用的会变绿，选一个最快的即可（地址只记在你自己浏览器里）。
+      </p>
+      <div class="bar room-bar">
+        <button class="btn primary" id="guide-detect" type="button">检测可用中转</button>
+        <button class="btn" id="guide-demo" type="button">先用示例数据看看</button>
+        <span class="bar-note" id="guide-detect-note">还没检测</span>
+      </div>
+      <div class="cands" id="guide-cands" hidden></div>
+    </div>
+
+    <div class="gstep" id="gstep-2" hidden>
+      <h4>② 填入学年份</h4>
+      <p class="hint">查询开始时间会自动设成你入学那一年的 1 月 1 日 00:00:00，这样从入住起的充值都能算进合计。</p>
+      <div class="row row-tight">
+        <div class="field">
+          <label class="f" for="in-enroll">入学年份</label>
+          <input type="number" id="in-enroll" inputmode="numeric" min="2000" max="2100" step="1" placeholder="例如 2022">
+        </div>
+      </div>
+      <p class="hint" id="guide-year-note">未填写时按「全部」查询。</p>
+    </div>
+
+    <div class="gstep" id="gstep-3" hidden>
+      <h4>③ 选楼栋</h4>
+      <p class="hint" id="guide-loudong-note">正在读取楼栋列表…</p>
+      <div class="roomlist-body" id="guide-loudong"></div>
+    </div>
+
+    <div class="gstep" id="gstep-4" hidden>
+      <h4>④ 选房间</h4>
+      <p class="hint" id="guide-room-note">点房间号就完成引导，主界面会自动查这个房间。</p>
+      <div class="roomlist-body" id="guide-room"></div>
+    </div>
+
+  </div>
+  <div class="modal-foot">
+    <span class="modal-note" id="guide-foot-note">共 4 步，随时可以跳过</span>
+    <button class="btn" id="btn-guide-prev" type="button" hidden>上一步</button>
+    <button class="btn primary" id="btn-guide-next" type="button">下一步</button>
+  </div>
+</div>
+
+<!-- ========== 导出预览 ========== -->
+<div class="modal" id="pv" hidden role="dialog" aria-modal="true" aria-labelledby="pv-title">
+  <div class="modal-head">
+    <h3 id="pv-title">导出预览</h3>
+    <button class="btn mini ghost" id="pv-close" type="button">关闭</button>
+  </div>
+  <div class="modal-body">
+    <div class="meta" id="pv-meta"></div>
+    <div id="pv-body"></div>
+  </div>
+  <div class="modal-foot">
+    <span class="modal-note" id="pv-note"></span>
+    <button class="btn" id="pv-cancel" type="button">取消</button>
+    <button class="btn primary" id="pv-ok" type="button">确认导出</button>
+  </div>
+</div>
 
 <div id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="assets/app.js"></script>

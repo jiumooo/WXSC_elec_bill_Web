@@ -168,6 +168,53 @@ td.idx{color:var(--muted);font-variant-numeric:tabular-nums}
 .summary-title{flex:1 1 auto}
 .channel-body{margin-top:14px}
 
+/* ---------------- 顶栏动作（房间设置 / 中转通道） ---------------- */
+.head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.head-actions .btn{padding:5px 12px;font-size:12.5px}
+
+/* ---------------- 表格 + 导出按钮同一行 ---------------- */
+.tabs-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-top:14px;
+  border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px}
+.tabs-row .tabs{margin-bottom:0;flex:1 1 auto}
+.tabs-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------------- 抽屉 ---------------- */
+body.no-scroll{overflow:hidden}
+.scrim{position:fixed;inset:0;background:rgba(9,12,18,.5);z-index:40;animation:fade .18s ease-out}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:50;width:min(600px,100%);
+  background:var(--card);border-left:1px solid var(--line);display:flex;flex-direction:column;
+  box-shadow:-18px 0 40px -24px rgba(0,0,0,.5);animation:slide .22s ease-out}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.drawer-head h2{font-size:15px;margin:0;font-weight:640}
+.drawer-body{padding:16px 18px 32px;overflow:auto;flex:1 1 auto}
+@keyframes slide{from{transform:translateX(18px);opacity:.6}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* ---------------- 弹窗（引导 / 导出预览） ---------------- */
+.modal{position:fixed;z-index:60;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(900px,calc(100% - 24px));max-height:calc(100% - 36px);background:var(--card);
+  border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;
+  box-shadow:0 24px 60px -24px rgba(0,0,0,.6);overflow:hidden}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.modal-head h3{font-size:15px;margin:0;font-weight:640}
+.modal-body{padding:16px 18px;overflow:auto;flex:1 1 auto}
+.modal-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:12px 18px;border-top:1px solid var(--line);background:var(--row);flex:0 0 auto}
+.modal-note{margin-right:auto;font-size:11.5px;color:var(--muted);word-break:break-all}
+.pv-scroll{max-height:min(52vh,430px)}
+.pv-table{font-size:12.5px}
+
+/* ---------------- 引导 ---------------- */
+.guide{width:min(720px,calc(100% - 24px))}
+.guide .modal-body{min-height:200px}
+.guide-dots{display:flex;gap:6px;padding:10px 18px 0;flex:0 0 auto}
+.guide-dots .dot{width:26px;height:4px;border-radius:3px;background:var(--line);transition:.2s}
+.guide-dots .dot.on{background:var(--brand)}
+.gstep h4{margin:0 0 8px;font-size:14.5px;font-weight:640}
+.gstep .hint:first-of-type{margin-top:0}
+
 /* ---------------- 其他 ---------------- */
 .footnote{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;color:var(--muted);
   font-size:11.5px;padding:6px 0 10px}
@@ -196,4 +243,12 @@ td.idx{color:var(--muted);font-variant-numeric:tabular-nums}
   .cand{grid-template-columns:1fr}
   .cand>.btn{grid-column:1 / 2;grid-row:auto;width:100%;margin-top:4px}
   .roomlist-body{grid-template-columns:repeat(auto-fill,minmax(72px,1fr))}
+  .tabs-actions{width:100%}
+  .tabs-actions .btn{flex:1 1 auto}
+  .drawer{width:100%}
+  .modal{width:100%;max-height:calc(100% - 16px);top:auto;bottom:0;transform:translateX(-50%);
+    border-radius:16px 16px 0 0}
+  .modal-foot .btn{flex:1 1 auto}
+  .modal-note{width:100%;margin-right:0}
+  .head-actions{width:100%;justify-content:flex-start}
 }
