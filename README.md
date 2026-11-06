@@ -86,7 +86,7 @@
 
 ### 方式一：Cloudflare Worker（免费、两步）
 
-**不想装命令行**：登录 Cloudflare → `Workers & Pages` → `Create Worker` → 把仓库里 `relay/worker.js` 的内容整个粘进编辑器 → `Deploy`，
+**不想装命令行**：登录 Cloudflare → `Workers & Pages` → `Create Worker` → 在页面底部「数据通道」里点 **「复制 Worker 代码」** 拿到全文（或直接打开 [`relay/worker.js`](relay/worker.js)）粘进编辑器 → `Deploy`，
 得到 `https://xxx.workers.dev`，填进页面「中转地址」点「保存并测试」。
 
 **或者用 wrangler**：

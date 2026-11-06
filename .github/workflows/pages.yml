@@ -22,10 +22,12 @@ jobs:
         uses: actions/checkout@v4
 
       # 只发布站点本体，避免把 .git 之类的东西塞进 Pages 产物
+      # relay/ 只放 worker.js，方便页面上「复制 Worker 代码」直接取用
       - name: Stage site
         run: |
-          mkdir -p _site
+          mkdir -p _site/relay
           cp -R index.html assets README.md LICENSE .nojekyll _site/
+          cp relay/worker.js _site/relay/worker.js
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

@@ -116,7 +116,9 @@ function renderChips() {
   const ch = api.getChannel();
   const label = (api.CHANNELS[ch.mode] || api.CHANNELS.direct).label;
   setChip('chip-version', 'v' + api.APP_VERSION, '');
-  setChip('chip-channel', '通道：' + label, ch.mode === 'demo' ? 'warn' : ch.mode === 'relay' ? 'ok' : '');
+  const needRelay = ch.mode === 'direct' && /\.github\.io$/i.test(location.hostname);
+  setChip('chip-channel', needRelay ? '通道：直连 · 线上需中转' : '通道：' + label,
+    ch.mode === 'demo' || needRelay ? 'warn' : ch.mode === 'relay' ? 'ok' : '');
   setChip('chip-room', S.room ? roomDesc() : '未设置房间', '');
   const tag = $('channel-tag');
   if (tag) tag.textContent = label;
@@ -126,7 +128,9 @@ function renderChips() {
       ? '当前：示例数据（不会请求学校接口，仅用于预览界面）'
       : ch.mode === 'relay'
         ? '当前：经由自建中转 ' + (ch.relayBase || '（地址为空）')
-        : '当前：直连 pay.wxstc.cn（需要同源部署或反向代理）';
+        : needRelay
+          ? '当前：直连 pay.wxstc.cn —— GitHub Pages 上会被浏览器拦，请点上面的「自动检测可用中转」，或填一个中转地址'
+          : '当前：直连 pay.wxstc.cn（需要同源部署或反向代理）';
   }
 }
 
@@ -800,6 +804,24 @@ function bind() {
     candBox.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-pick]');
       if (btn) pickRelay(Number(btn.dataset.pick));
+    });
+  }
+
+  // 一键复制 Worker 源码
+  const btnCopy = $('btn-copy-worker');
+  if (btnCopy) {
+    btnCopy.addEventListener('click', async () => {
+      try {
+        const res = await fetch('relay/worker.js', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const code = await res.text();
+        await navigator.clipboard.writeText(code);
+        btnCopy.textContent = '已复制，粘贴到 Cloudflare 编辑器';
+        setTimeout(() => { btnCopy.textContent = '复制 Worker 代码'; }, 2600);
+        toast('Worker 代码已复制');
+      } catch (err) {
+        toast('复制失败：' + err.message + '（可直接打开 relay/worker.js 复制）');
+      }
     });
   }
 }
