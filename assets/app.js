@@ -934,7 +934,7 @@ function guideNext() {
     const note = $('guide-year-note');
     if (note) {
       note.textContent = raw
-        ? '查询开始时间已设为 ' + r.start.replace('T', ' ') + '，结束时间 ' + r.end.replace('T', ' ')
+        ? '按 9 月 1 日入学算：查询开始时间 ' + r.start.replace('T', ' ') + '，结束时间 ' + r.end.replace('T', ' ')
         : '没有填年份，按「全部」查询。';
     }
     guideGo(3);

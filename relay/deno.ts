@@ -20,7 +20,7 @@ function cors(origin: string) {
 const info = () => ({
   ok: true,
   service: 'wxsc-elec-relay (deno)',
-  version: '1.2.0',
+  version: '1.2.1',
   upstream: 'https://' + UPSTREAM,
   note: '无状态转发：不记录、不存储任何请求与结果；多人同时用也互不影响。',
 });
