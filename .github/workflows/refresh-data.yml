@@ -1,0 +1,60 @@
+name: Refresh history data
+
+# 每天自动用真实接口刷新 data/（不需要任何中转：跑在 GitHub 的机器上，服务端直连）
+on:
+  schedule:
+    - cron: '17 19 * * *'   # UTC 19:17 = 北京时间 03:17
+  workflow_dispatch:
+    inputs:
+      loudong:
+        description: '只抓某个楼栋（留空 = 全部）'
+        required: false
+        default: ''
+      limit:
+        description: '每个楼栋最多抓几间（留空 = 全部）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Crawl
+        env:
+          LOUDONG: ${{ inputs.loudong }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          ARGS="--concurrency 6"
+          if [ -n "$LOUDONG" ]; then ARGS="$ARGS --loudong $LOUDONG"; fi
+          if [ -n "$LIMIT" ]; then ARGS="$ARGS --limit $LIMIT"; fi
+          node tools/crawl.mjs $ARGS
+
+      - name: Normalize
+        run: node tools/normalize-data.mjs
+
+      - name: Commit if changed
+        run: |
+          if [ -z "$(git status --porcelain data)" ]; then
+            echo "数据没有变化，跳过提交"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          SUMMARY="chore(data): refresh $(date -u '+%Y-%m-%d %H:%M') UTC"
+          git commit -m "$SUMMARY"
+          git push
