@@ -135,7 +135,9 @@ async function serveStatic(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || '/', 'http://' + (req.headers.host || HOST + ':' + PORT));
+  // Chrome 把 "//?a=1"（协议相对写法）当路径送过来时 new URL 会抛 Invalid URL，这里先归一
+  const rawUrl = String(req.url || '/').replace(/^\/{2,}(?=[?#])/, '/').replace(/^\/{2,}/, '/');
+  const url = new URL(rawUrl, 'http://' + (req.headers.host || HOST + ':' + PORT));
   let status = 200;
   try {
     if (req.method === 'OPTIONS') {
@@ -145,7 +147,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === '/health') {
-      sendJson(res, 200, { ok: true, service: 'WXSC_elec_bill_Web relay (local)', version: '1.2.1', upstream: UPSTREAM });
+      sendJson(res, 200, { ok: true, service: 'WXSC_elec_bill_Web relay (local)', version: '1.2.2', upstream: UPSTREAM });
       return;
     }
     if (url.pathname.startsWith(PREFIX)) {

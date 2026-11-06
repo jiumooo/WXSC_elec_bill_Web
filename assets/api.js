@@ -5,7 +5,7 @@
  * 因此多人同时使用、各自查询自己的房间时互不影响。
  * ========================================================================== */
 
-export const APP_VERSION = '1.2.1';
+export const APP_VERSION = '1.2.2';
 
 /* ------------------------------------------------------------------ 常量 */
 const APPID = 'AABBCC01';
@@ -545,7 +545,9 @@ export async function resolveRoom(cfg, options = {}) {
   if (!ln || !rn) throw new Error('楼栋号和房间号都要填数字，例如 楼栋=3、房间=101（表示 3 号楼 101 室）');
 
   const rows = await allRooms(xiaoquId, datasource, options);
-  const cand = rows.filter((r) => loudongNumber(r.loudong) === parseInt(ln, 10));
+  const want = parseInt(ln, 10);
+  // 历史数据的楼栋名是中文（「三号楼」），loudongNumber 取不到数字，所以再用 loudongId 兜一层
+  const cand = rows.filter((r) => loudongNumber(r.loudong) === want || String(r.loudongId) === ln);
   if (!cand.length) {
     const names = Array.from(new Set(rows.map((r) => r.loudong))).sort();
     throw new Error('找不到「' + ln + ' 号楼」。可选楼栋：' + names.join('、'));

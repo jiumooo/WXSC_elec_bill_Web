@@ -2,7 +2,7 @@
 
 **[👉 点这里直接查：https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.2.1-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.2.2-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
 
 无锡科技职业技术学院（WXSC）电费查询的纯静态网页版：查当前房间余额、设置房间、按时间范围查充值记录，并把结果导出成 **Excel** 或 **Markdown**。
 
@@ -200,6 +200,10 @@ git push
 ```
 
 ## 更新日志
+
+### 1.2.2
+
+- 修掉历史数据模式下用链接直达（`?loudong=3&room=101`）或点「本机用过的房间」解析失败的问题：历史台账的楼栋名是中文（「三号楼」），原来按「取楼栋名里的数字」匹配楼栋会拿到空值，现在同时按楼栋编号匹配。
 
 ### 1.2.1
 
