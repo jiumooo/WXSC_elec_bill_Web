@@ -198,7 +198,7 @@ function renderSummary() {
     '<td>' + esc(r.last) + '</td>' +
     '</tr>').join('');
   box.innerHTML = '<div class="scroll"><table><thead><tr>' +
-    '<th class="idx">#</th><th>备注</th><th>账号</th><th class="num">笔数</th>' +
+    '<th class="idx">#</th><th title="只写入本机 localStorage，不会上传">备注（本机）</th><th>账号</th><th class="num">笔数</th>' +
     '<th class="num">金额(元)</th><th class="num">占比</th><th>首次充值</th><th>最近充值</th>' +
     '</tr></thead><tbody>' + rows + '</tbody><tfoot class="tfoot"><tr>' +
     '<td></td><td>合计</td><td></td><td class="num">' + S.items.length + '</td>' +
@@ -224,7 +224,7 @@ function renderDetail() {
     '<td>' + esc(r.outNo) + '</td>' +
     '</tr>').join('');
   box.innerHTML = '<div class="scroll"><table><thead><tr>' +
-    '<th class="idx">#</th><th>充值时间</th><th class="num">金额(元)</th><th>备注</th>' +
+    '<th class="idx">#</th><th>充值时间</th><th class="num">金额(元)</th><th title="只写入本机 localStorage，不会上传">备注（本机）</th>' +
     '<th>账号</th><th>记录号</th><th>外部订单号</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
@@ -517,6 +517,21 @@ function bind() {
   $('btn-query').addEventListener('click', () => runQuery({ refetch: false }));
   $('btn-export-xlsx').addEventListener('click', exportExcel);
   $('btn-export-md').addEventListener('click', exportMarkdown);
+
+  const btnClear = $('btn-clear-local');
+  if (btnClear) {
+    btnClear.addEventListener('click', (e) => {
+      if (e) e.preventDefault();
+      try {
+        Object.keys(localStorage).forEach((k) => {
+          if (k.indexOf('wxsc.elec.') === 0) localStorage.removeItem(k);
+        });
+      } catch (err) { /* 隐私模式忽略 */ }
+      S.notes = {};
+      renderData();
+      toast('已清除本机设置与备注');
+    });
+  }
 
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
