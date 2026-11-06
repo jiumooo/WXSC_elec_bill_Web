@@ -386,7 +386,7 @@ export function shortRoomCode(fullRoom, loudongName) {
 let metaCache = null;
 
 // GitHub Pages 对同一 IP 的突发并发请求会短暂 403（CDN 限流），这里做退避重试
-async function fetchJsonRetry(path, tries = 3) {
+async function fetchJsonRetry(path, tries = 5) {
   let lastErr = null;
   for (let i = 0; i < tries; i++) {
     try {
@@ -397,7 +397,7 @@ async function fetchJsonRetry(path, tries = 3) {
     } catch (e) {
       lastErr = e;
     }
-    await new Promise((ok) => setTimeout(ok, 220 * Math.pow(2, i)));
+    await new Promise((ok) => setTimeout(ok, 300 * Math.pow(1.9, i)));
   }
   throw lastErr || new Error('读不到 ' + path);
 }

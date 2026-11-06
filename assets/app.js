@@ -1253,12 +1253,16 @@ async function boot() {
   // 历史数据截止时间（读合并索引 data/index.json；GitHub Pages 对并发请求会 403，所以只发这一个）
   const later = window.requestIdleCallback || ((fn) => setTimeout(fn, 1200));
   later(() => { api.loadRelayRegistry().then((list) => { registryEndpoints = list; }).catch(() => {}); });
-  api.historyMeta().then((m) => {
-    S.cutoff = m.cutoff || '';
+  const applyCutoff = (m) => {
+    S.cutoff = (m && m.cutoff) || '';
     renderChips();
     renderChannelNote();
     renderData();
-  }).catch(() => { /* 没有历史数据就只显示实时通道 */ });
+  };
+  api.historyMeta().then(applyCutoff).catch(() => {
+    // Pages 偶发限流：2.5 秒后带上 force 再试一次，页面不必刷新
+    setTimeout(() => { api.historyMeta(true).then(applyCutoff).catch(() => {}); }, 2500);
+  });
 
   // 预填楼栋下拉（失败不打扰用户，点「刷新房间列表」可重试）
   if (api.getChannel().mode !== 'direct') loadLoudongSelect(false);
