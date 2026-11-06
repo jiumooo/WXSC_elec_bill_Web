@@ -51,6 +51,7 @@ const S = {
   person: '',
   fetchedAt: '',
   loading: false,
+  cutoff: '',
 };
 
 let toastTimer = 0;
@@ -119,17 +120,19 @@ function renderChips() {
   const needRelay = ch.mode === 'direct' && /\.github\.io$/i.test(location.hostname);
   const tag = $('channel-tag');
   if (tag) {
-    tag.textContent = needRelay ? label + ' · 线上需中转' : label;
-    tag.className = 'tag' + (ch.mode === 'demo' || needRelay ? ' warn' : ch.mode === 'relay' ? ' ok' : '');
+    tag.textContent = needRelay ? label + ' · 线上需中转'
+      : ch.mode === 'history' ? '历史数据 · 截至 ' + (S.cutoff || '—')
+        : label;
+    tag.className = 'tag' + (needRelay ? ' warn' : ch.mode === 'history' ? '' : ch.mode === 'relay' ? ' ok' : '');
   }
   const note = $('channel-note');
   if (note) {
-    note.textContent = ch.mode === 'demo'
-      ? '当前：示例数据（不会请求学校接口，仅用于预览界面）'
+    note.textContent = ch.mode === 'history'
+      ? '当前：历史数据（离线快照，截至 ' + (S.cutoff || '—') + '，不发任何请求，人人可用）'
       : ch.mode === 'relay'
         ? '当前：经由中转 ' + (ch.relayBase || '（地址为空）') + (ch.relayMode === 'query' ? '（公共代理模式）' : '')
         : needRelay
-          ? '当前：直连 pay.wxstc.cn —— GitHub Pages 上会被浏览器拦，请点上面的「自动检测可用中转」，或填一个中转地址'
+          ? '当前：直连 pay.wxstc.cn —— GitHub Pages 上会被浏览器拦，请点上面的「自动检测可用中转」，或直接切到历史数据'
           : '当前：直连 pay.wxstc.cn（需要同源部署或反向代理）';
   }
 }
@@ -176,7 +179,9 @@ function metaHtml() {
   if (!S.all.length) return '还没有查询结果。';
   return '范围 <b>' + esc(S.range.label) + '</b> · <b>' + S.items.length + '</b> 笔 · 合计 <b>' +
     fixed(total) + '</b> 元 · <b>' + people + '</b> 个账号' +
-    (S.fetchedAt ? ' · 记录拉取于 ' + esc(S.fetchedAt) : '');
+    (api.getChannel().mode === 'history'
+      ? ' · 数据截至 ' + esc(S.cutoff || '—') + '（离线快照）'
+      : (S.fetchedAt ? ' · 记录拉取于 ' + esc(S.fetchedAt) : ''));
 }
 
 function renderSummary() {
@@ -278,8 +283,8 @@ function renderData() {
   renderPerson();
   const qhint = $('q-hint');
   if (qhint) {
-    qhint.textContent = api.getChannel().mode === 'demo'
-      ? '当前是示例数据通道，记录为本地生成，仅用于预览界面与导出格式。'
+    qhint.textContent = api.getChannel().mode === 'history'
+      ? '当前是历史数据（离线快照，截至 ' + (S.cutoff || '—') + '），导出不会再请求任何接口。'
       : '导出的是当前这次查询的结果，不会再请求一次接口。';
   }
 }
@@ -359,10 +364,24 @@ function readRoomInputs() {
 }
 
 function fillRoomInputs(cfg) {
-  $('in-loudong').value = cfg.loudongNo || '';
-  $('in-room').value = cfg.roomNo || '';
-  $('in-xiaoqu').value = cfg.xiaoquId || api.DEFAULT_XIAOQU;
-  $('in-datasource').value = cfg.datasource || api.DEFAULT_DATASOURCE;
+  const l = $('in-loudong');
+  const r = $('in-room');
+  const lno = String((cfg && cfg.loudongNo) || '');
+  const rno = String((cfg && cfg.roomNo) || '');
+  if (l) {
+    if (lno && !Array.from(l.options).some((o) => o.value === lno)) {
+      l.insertAdjacentHTML('beforeend', '<option value="' + esc(lno) + '">' + esc(lno) + ' 号楼</option>');
+    }
+    l.value = lno;
+  }
+  if (r) {
+    if (rno && !Array.from(r.options).some((o) => o.value === rno)) {
+      r.insertAdjacentHTML('beforeend', '<option value="' + esc(rno) + '">' + esc(rno) + ' 室</option>');
+    }
+    r.value = rno;
+  }
+  $('in-xiaoqu').value = (cfg && cfg.xiaoquId) || api.DEFAULT_XIAOQU;
+  $('in-datasource').value = (cfg && cfg.datasource) || api.DEFAULT_DATASOURCE;
 }
 
 function recentRooms() {
@@ -423,99 +442,102 @@ async function saveRoom(event) {
   }
 }
 
-/* ------------------------------------------------------------------ 可用房间 */
-let roomRows = [];
+/* ------------------------------------------------------------------ 楼栋 / 房间 下拉（先选楼栋，再选房间） */
+let loudongList = [];
 
-function shortRoomName(full, ln) {
-  const s = String(full == null ? '' : full);
-  return ln && s.indexOf(ln) === 0 ? s.slice(ln.length) : s;
+function roomScope() {
+  return {
+    xiaoquId: String($('in-xiaoqu').value || '').trim() || api.DEFAULT_XIAOQU,
+    datasource: String($('in-datasource').value || '').trim() || api.DEFAULT_DATASOURCE,
+  };
 }
 
-async function loadRoomList(force) {
+function resetRoomView() {
+  S.room = null;
+  S.balance = null;
+  S.all = [];
+  S.items = [];
+  S.summary = [];
+  S.person = '';
+  S.fetchedAt = '';
+  renderChips();
+  renderBalance();
+  renderData();
+}
+
+async function loadLoudongSelect(force) {
+  const sel = $('in-loudong');
   const btn = $('btn-room-list');
+  const note = $('room-list-note');
+  if (!sel) return;
   if (btn) { btn.disabled = true; btn.textContent = '读取中…'; }
-  const xiaoquId = String($('in-xiaoqu').value || '').trim() || api.DEFAULT_XIAOQU;
-  const datasource = String($('in-datasource').value || '').trim() || api.DEFAULT_DATASOURCE;
   try {
-    roomRows = await api.allRooms(xiaoquId, datasource, force ? { force: true } : {});
-    renderRoomList();
+    const scope = roomScope();
+    loudongList = await api.loudongOptions({ ...scope, force: !!force });
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">请选择楼栋</option>' + loudongList.map((l) =>
+      '<option value="' + esc(l.no) + '">' + esc(l.name) + '（' + l.rooms + ' 间）</option>').join('');
+    const want = keep || (S.cfg && S.cfg.loudongNo) || '';
+    if (want && loudongList.some((l) => String(l.no) === String(want))) sel.value = String(want);
+    if (note) {
+      note.textContent = '共 ' + loudongList.length + ' 个楼栋 · 先选楼栋，再选房间' +
+        (api.getChannel().mode === 'history' ? '（历史数据）' : '');
+    }
+    await loadRoomSelect();
   } catch (err) {
-    toast('读取房间列表失败：' + (err && err.message ? err.message : err), 5000);
+    if (note) note.textContent = '楼栋列表读取失败：' + ((err && err.message) || err);
+    toast('读取楼栋失败：' + ((err && err.message) || err), 5000);
     revealChannel(err);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '查询可用房间'; }
+    if (btn) { btn.disabled = false; btn.textContent = '刷新房间列表'; }
   }
 }
 
-function renderRoomList() {
-  const wrap = $('room-list-wrap');
-  const box = $('room-list');
+async function loadRoomSelect() {
+  const sel = $('in-room');
   const note = $('room-list-note');
-  if (!wrap || !box || !note) return;
-  wrap.hidden = false;
-  if (!roomRows.length) {
-    note.textContent = '没有读到房间数据';
-    box.innerHTML = '<div class="empty">接口没返回房间列表，先确认通道可用再试。</div>';
+  const lno = String($('in-loudong').value || '').trim();
+  if (!sel) return;
+  if (!lno) {
+    sel.innerHTML = '<option value="">请先选楼栋</option>';
+    sel.disabled = true;
+    if (note) note.textContent = '先选楼栋，房间列表会按楼栋自动匹配';
     return;
   }
-  const ln = String($('in-loudong').value || '').trim();
-  if (!ln) {
-    const map = new Map();
-    roomRows.forEach((r) => {
-      const n = api.loudongNumber(r.loudong);
-      if (!n) return;
-      if (!map.has(n)) map.set(n, { n, name: r.loudong || (n + ' 号楼'), count: 0 });
-      map.get(n).count += 1;
-    });
-    const items = Array.from(map.values()).sort((a, b) => a.n - b.n);
-    note.textContent = '共 ' + items.length + ' 个楼栋 · 点楼栋就能看到该楼全部房间';
-    box.innerHTML = items.map((x) =>
-      '<button class="room-item" type="button" data-loudong="' + x.n + '">' + esc(x.name) +
-      ' <span class="mini">' + x.count + ' 间</span></button>').join('');
-    return;
-  }
-  const rows = roomRows
-    .filter((r) => api.loudongNumber(r.loudong) === Number(ln))
-    .map((r) => ({ id: r.roomId, short: shortRoomName(r.room, ln) }))
-    .filter((r) => /^\d{2,}$/.test(r.short))
-    .sort((a, b) => ((Number(a.short) || 0) - (Number(b.short) || 0)) || (a.short < b.short ? -1 : 1));
-  const special = roomRows.filter((r) => api.loudongNumber(r.loudong) === Number(ln)).length - rows.length;
-  note.textContent = ln + ' 号楼 · 共 ' + rows.length + ' 间 · 点房间号直接查询' +
-    (special > 0 ? '（另有 ' + special + ' 间公用/备用房不支持按房间号定位）' : '');
-  box.innerHTML = rows.length
-    ? rows.map((r) => '<button class="room-item" type="button" data-room="' + esc(r.short) + '">' +
-        esc(r.short) + '</button>').join('')
-    : '<div class="empty">这个楼栋下没有房间，换个楼栋号试试。</div>';
-}
-
-async function onRoomListClick(event) {
-  const btn = event.target.closest('.room-item');
-  if (!btn) return;
-  if (btn.dataset.loudong) {
-    $('in-loudong').value = btn.dataset.loudong;
-    renderRoomList();
-    return;
-  }
-  if (btn.dataset.room) {
-    $('in-room').value = btn.dataset.room;
-    await saveRoom();
+  sel.disabled = true;
+  sel.innerHTML = '<option value="">读取中…</option>';
+  try {
+    const scope = roomScope();
+    const rows = await api.roomOptions(lno, scope);
+    const keep = S.cfg && String(S.cfg.loudongNo) === lno ? String(S.cfg.roomNo) : '';
+    sel.innerHTML = '<option value="">请选择房间</option>' + rows.map((r) =>
+      '<option value="' + esc(r.short) + '">' + esc(r.short) + ' 室</option>').join('');
+    sel.disabled = false;
+    const name = (loudongList.find((l) => String(l.no) === lno) || {}).name || (lno + ' 号楼');
+    if (note) note.textContent = name + ' · 共 ' + rows.length + ' 间可选';
+    if (keep && rows.some((r) => String(r.short) === keep)) sel.value = keep;
+  } catch (err) {
+    sel.innerHTML = '<option value="">读取失败</option>';
+    toast('读取房间失败：' + ((err && err.message) || err), 5000);
+    revealChannel(err);
   }
 }
 
 /* ------------------------------------------------------------------ 中转检测 */
 let relayList = [];
+let registryEndpoints = [];
 
 function relayCandidates() {
   const seen = new Set();
   const out = [];
-  const add = (url, label, mode) => {
+  const add = (url, label, mode, hint) => {
     const u = api.normalizeRelayBase(url);
     if (!u) return;
     const m = api.normalizeRelayMode(mode);
     const key = m + '|' + u;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ url: u, label, mode: m, state: 'idle', ms: 0, rooms: 0, note: '' });
+    out.push({ url: u, label, mode: m, hint: hint || '', state: 'idle', ms: 0, rooms: 0, note: '' });
   };
   const ch = api.getChannel();
   const saved = store.get(KEY.channel, null);
@@ -525,9 +547,10 @@ function relayCandidates() {
   try { q = new URLSearchParams(location.search).get('relay') || ''; } catch (e) { q = ''; }
   if (q) add(q, '链接参数 ?relay=', 'prefix');
   if (!/(^|\.)github\.io$/i.test(location.hostname)) add(location.origin, '本站同源（反向代理）', 'prefix');
-  add('http://127.0.0.1:8787', '本机 Node 中转 127.0.0.1:8787', 'prefix');
-  add('http://localhost:8787', '本机 Node 中转 localhost:8787', 'prefix');
-  api.PUBLIC_RELAYS.forEach((x) => add(x.url, x.label + '（实测多半已失效）', x.mode));
+  add('http://127.0.0.1:8787', '本机中转 127.0.0.1:8787', 'prefix', '在仓库目录跑 node relay/server.mjs');
+  add('http://localhost:8787', '本机中转 localhost:8787', 'prefix', '同上');
+  registryEndpoints.forEach((x) => add(x.url, x.label, x.mode, x.note));
+  api.PUBLIC_RELAYS.forEach((x) => add(x.url, x.label, x.mode));
   return out;
 }
 
@@ -540,8 +563,8 @@ function renderRelayCandidates(list, boxId) {
     const meta = c.state === 'ok'
       ? '可用 · ' + c.ms + ' ms · 读到 ' + c.rooms + ' 个房间'
       : c.state === 'fail'
-        ? '不可用 · ' + esc((c.note || '').slice(0, 110))
-        : c.state === 'testing' ? '检测中…' : '未检测';
+        ? '不可用 · ' + esc((c.note || '').slice(0, 110)) + (c.hint ? ' · ' + esc(c.hint) : '')
+        : c.state === 'testing' ? '检测中…' : (c.hint ? esc(c.hint) : '未检测');
     const active = api.getChannel().mode === 'relay' &&
       api.getChannel().relayBase === c.url && api.getChannel().relayMode === c.mode;
     return '<div class="cand ' + state + (active ? ' on' : '') + '">' +
@@ -587,7 +610,7 @@ async function detectRelays(target) {
   if (note) {
     note.textContent = okCount
       ? '检测完成：' + okCount + ' 个可用 · 点「用它查询」，地址会记在本机'
-      : '检测完成：没有可用地址 · 按上面说明自建一个中转，或在「中转地址」里手填';
+      : '检测完成：没有可用地址 —— 公共代理 2026 年起基本只支持 GET，靠不住。点「直接用历史数据」照样能查，或者跑一条 node 命令自建中转（见下面两步）';
   }
   renderRelayCandidates(relayList, boxId);
   if (btn) { btn.disabled = false; btn.textContent = '自动检测可用中转'; }
@@ -626,11 +649,12 @@ function renderChannelNote() {
   const el = $('channel-note');
   if (!el) return;
   const ch = api.getChannel();
-  if (ch.mode === 'demo') el.textContent = '当前：示例数据（不会请求学校接口）';
-  else if (ch.mode === 'relay') {
+  if (ch.mode === 'history') {
+    el.textContent = '当前：历史数据（离线快照，截至 ' + (S.cutoff || '—') + '）—— 不用中转、不用联网查询，人人可用';
+  } else if (ch.mode === 'relay') {
     el.textContent = '当前：中转 ' + (ch.relayBase || '（未填）') +
       (ch.relayMode === 'query' ? '（公共代理模式）' : '');
-  } else el.textContent = '当前：直连 pay.wxstc.cn —— 需要同源部署；在 Pages 上会被 CORS 拦，请改用中转';
+  } else el.textContent = '当前：直连 pay.wxstc.cn —— 需要同源部署；在 Pages 上会被 CORS 拦，请改用中转或历史数据';
 }
 
 /* ------------------------------------------------------------------ 抽屉 */
@@ -803,20 +827,10 @@ async function loadGuideRooms() {
   const note = $('guide-loudong-note');
   if (!box) return;
   if (G.loudongs.length) { renderGuideLoudongs(); return; }
-  if (note) note.textContent = '正在从缴费平台读取楼栋列表…';
+  if (note) note.textContent = '正在读取楼栋列表…';
   box.innerHTML = '<div class="empty"><span class="spin"></span>读取中…</div>';
   try {
-    const cfg = readRoomInputs();
-    const rows = await api.allRooms(cfg.xiaoquId, cfg.datasource);
-    const map = new Map();
-    rows.forEach((r) => {
-      const n = api.loudongNumber(r.loudong);
-      if (!n) return;
-      if (!map.has(n)) map.set(n, { n, name: r.loudong || (n + ' 号楼'), count: 0 });
-      map.get(n).count += 1;
-    });
-    G.rooms = rows;
-    G.loudongs = Array.from(map.values()).sort((a, b) => a.n - b.n);
+    G.loudongs = await api.loudongOptions(roomScope());
     renderGuideLoudongs();
   } catch (err) {
     if (note) note.textContent = '读取失败：' + (err && err.message ? err.message : err);
@@ -831,31 +845,33 @@ function renderGuideLoudongs() {
   if (!box) return;
   if (!G.loudongs.length) {
     note.textContent = '没有读到楼栋';
-    box.innerHTML = '<div class="empty">接口没返回楼栋列表。</div>';
+    box.innerHTML = '<div class="empty">没有可选的楼栋。</div>';
     return;
   }
   if (note) note.textContent = '共 ' + G.loudongs.length + ' 个楼栋 · 点一下继续';
   box.innerHTML = G.loudongs.map((x) =>
-    '<button class="room-item" type="button" data-gloudong="' + x.n + '">' + esc(x.name) +
-    ' <span class="mini">' + x.count + ' 间</span></button>').join('');
+    '<button class="room-item" type="button" data-gloudong="' + x.no + '">' + esc(x.name) +
+    ' <span class="mini">' + x.rooms + ' 间</span></button>').join('');
 }
 
-function guidePickLoudong(n) {
+async function guidePickLoudong(n) {
   G.loudong = String(n);
-  const ln = Number(n);
-  const rows = G.rooms
-    .filter((r) => api.loudongNumber(r.loudong) === ln)
-    .map((r) => ({ id: r.roomId, short: shortRoomName(r.room, G.loudong) }))
-    .filter((r) => /^\d{2,}$/.test(r.short))
-    .sort((a, b) => ((Number(a.short) || 0) - (Number(b.short) || 0)) || (a.short < b.short ? -1 : 1));
   const box = $('guide-room');
   const note = $('guide-room-note');
-  if (note) note.textContent = G.loudong + ' 号楼 · 共 ' + rows.length + ' 间 · 点房间号完成引导';
-  if (box) {
-    box.innerHTML = rows.length
-      ? rows.map((r) => '<button class="room-item" type="button" data-groom="' + esc(r.short) + '">' +
-          esc(r.short) + '</button>').join('')
-      : '<div class="empty">这个楼栋下没有可选房间。</div>';
+  if (note) note.textContent = G.loudong + ' 号楼 · 正在匹配房间…';
+  try {
+    const rows = await api.roomOptions(G.loudong, roomScope());
+    const name = (G.loudongs.find((l) => String(l.no) === G.loudong) || {}).name || (G.loudong + ' 号楼');
+    if (note) note.textContent = name + ' · 共 ' + rows.length + ' 间 · 点房间号完成引导';
+    if (box) {
+      box.innerHTML = rows.length
+        ? rows.map((r) => '<button class="room-item" type="button" data-groom="' + esc(r.short) + '">' +
+            esc(r.short) + ' 室</button>').join('')
+        : '<div class="empty">这个楼栋下没有可选房间。</div>';
+    }
+  } catch (err) {
+    if (note) note.textContent = '房间读取失败：' + ((err && err.message) || err);
+    revealChannel(err);
   }
   guideGo(4);
 }
@@ -878,9 +894,24 @@ function applyEnrollYear(year) {
 async function guideFinish(roomNo) {
   const year = $('in-enroll') ? String($('in-enroll').value || '').trim() : '';
   applyEnrollYear(year);
-  $('in-loudong').value = G.loudong;
-  $('in-room').value = roomNo;
+  const l = $('in-loudong');
+  if (l) {
+    if (G.loudong && !Array.from(l.options).some((o) => o.value === String(G.loudong))) {
+      l.insertAdjacentHTML('beforeend', '<option value="' + esc(G.loudong) + '">' + esc(G.loudong) + ' 号楼</option>');
+    }
+    l.value = String(G.loudong || '');
+  }
   guideClose(true);
+  // 按楼栋把房间下拉填满，否则 select 里没有这个 option，值会被丢掉
+  await loadRoomSelect();
+  const r = $('in-room');
+  if (r) {
+    const want = String(roomNo || '');
+    if (want && !Array.from(r.options).some((o) => o.value === want)) {
+      r.insertAdjacentHTML('beforeend', '<option value="' + esc(want) + '">' + esc(want) + ' 室</option>');
+    }
+    r.value = want;
+  }
   toast('引导完成，正在查 ' + G.loudong + ' 号楼 ' + roomNo + ' 室', 3000);
   await saveRoom();
 }
@@ -890,7 +921,7 @@ function guideNext() {
     const ch = api.getChannel();
     const needRelay = ch.mode === 'direct' && /\.github\.io$/i.test(location.hostname);
     if (needRelay) {
-      toast('先点「检测可用中转」选一个，或点「先用示例数据看看」', 4200);
+      toast('先选一个可用的中转，或点「直接用历史数据」继续', 4200);
       return;
     }
     guideGo(2);
@@ -1007,11 +1038,14 @@ function bind() {
   const gDemo = $('guide-demo');
   if (gDemo) {
     gDemo.addEventListener('click', () => {
-      const saved = api.setChannel({ mode: 'demo', relayBase: '' });
+      const saved = api.setChannel({ mode: 'history', relayBase: '' });
       store.set(KEY.channel, saved);
       renderChips();
+      renderChannelNote();
+      loadChannelInputs();
       const note = $('guide-detect-note');
-      if (note) note.textContent = '已切到示例数据（只看界面），点「下一步」继续';
+      if (note) note.textContent = '已切到历史数据（离线，截至 ' + (S.cutoff || '—') + '），点「下一步」继续';
+      G.loudongs = [];
       guideGo(2);
     });
   }
@@ -1103,26 +1137,35 @@ function bind() {
   });
   $('btn-test-channel').addEventListener('click', applyChannel);
 
-  // 可用房间
+  // 可用房间（楼栋下拉 → 房间下拉）
   const btnRooms = $('btn-room-list');
-  if (btnRooms) btnRooms.addEventListener('click', () => loadRoomList(false));
-  const roomBox = $('room-list');
-  if (roomBox) roomBox.addEventListener('click', onRoomListClick);
-  const closeRooms = $('btn-room-list-close');
-  if (closeRooms) closeRooms.addEventListener('click', () => { $('room-list-wrap').hidden = true; });
+  if (btnRooms) btnRooms.addEventListener('click', () => loadLoudongSelect(true));
 
-  // 改了楼栋号，若房间列表已展开就按新楼栋重排（不额外发请求）
-  let ldTimer = 0;
-  $('in-loudong').addEventListener('input', () => {
-    const wrap = $('room-list-wrap');
-    if (!wrap || wrap.hidden || !roomRows.length) return;
-    clearTimeout(ldTimer);
-    ldTimer = setTimeout(renderRoomList, 200);
+  $('in-loudong').addEventListener('change', () => {
+    resetRoomView();
+    loadRoomSelect();
+  });
+  $('in-room').addEventListener('change', () => {
+    if (String($('in-room').value || '').trim()) saveRoom();
   });
 
   // 中转自动检测
   const btnDetect = $('btn-detect-relay');
   if (btnDetect) btnDetect.addEventListener('click', detectRelays);
+  const btnHistory = $('btn-use-history');
+  if (btnHistory) {
+    btnHistory.addEventListener('click', async () => {
+      const saved = api.setChannel({ mode: 'history', relayBase: '' });
+      store.set(KEY.channel, saved);
+      loadChannelInputs();
+      renderChips();
+      S.cutoff = (await api.historyMeta().catch(() => null) || {}).cutoff || S.cutoff;
+      renderChannelNote();
+      renderData();
+      await loadLoudongSelect(true);
+      toast('已切到历史数据（离线，截至 ' + (S.cutoff || '—') + '）', 3200);
+    });
+  }
   const candBox = $('relay-candidates');
   if (candBox) {
     candBox.addEventListener('click', (e) => {
@@ -1157,7 +1200,7 @@ async function boot() {
   const qMode = params.get('mode');
   if (qRelay || qMode) {
     const saved = api.setChannel({
-      mode: qMode === 'demo' || qMode === 'direct' ? qMode : (qRelay ? 'relay' : 'direct'),
+      mode: qMode ? api.normalizeMode(qMode) : (qRelay ? 'relay' : 'direct'),
       relayBase: qRelay || '',
     });
     store.set(KEY.channel, saved);
@@ -1202,6 +1245,18 @@ async function boot() {
   switchTab('summary');
   renderBalance();
   renderData();
+
+  // 历史数据截止时间（只读一个很小的 json，用于界面标注）
+  api.loadRelayRegistry().then((list) => { registryEndpoints = list; }).catch(() => {});
+  api.historyMeta().then((m) => {
+    S.cutoff = m.cutoff || '';
+    renderChips();
+    renderChannelNote();
+    renderData();
+  }).catch(() => { /* 没有历史数据就只显示实时通道 */ });
+
+  // 预填楼栋下拉（失败不打扰用户，点「刷新房间列表」可重试）
+  if (api.getChannel().mode !== 'direct') loadLoudongSelect(false);
 
   const done = store.get(KEY.guide, null);
   const forced = params.get('guide') === '1';

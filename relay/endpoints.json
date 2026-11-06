@@ -1,0 +1,18 @@
+{
+  "updatedAt": "2026-11-07",
+  "note": "中转登记表。页面「自动检测可用中转」会把这些地址和本机地址一起并发实测，谁通就用谁。自建好之后欢迎提 PR 往 endpoints 里加一行；不要加需要付费 key 的公共代理。",
+  "endpoints": [
+    {
+      "url": "http://127.0.0.1:8787",
+      "mode": "prefix",
+      "label": "本机中转 127.0.0.1:8787",
+      "note": "克隆仓库后执行 node relay/server.mjs"
+    },
+    {
+      "url": "http://localhost:8787",
+      "mode": "prefix",
+      "label": "本机中转 localhost:8787",
+      "note": "同上"
+    }
+  ]
+}

@@ -5,12 +5,12 @@
  * 因此多人同时使用、各自查询自己的房间时互不影响。
  * ========================================================================== */
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 /* ------------------------------------------------------------------ 常量 */
 const APPID = 'AABBCC01';
 const APPSECRET = '5F10C0339BA54972A4B7599754BB919D';
-const UPSTREAM = 'https://pay.wxstc.cn/grdp-ele-third-unite';
+export const UPSTREAM = 'https://pay.wxstc.cn/grdp-ele-third-unite';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MicroMessenger/7.0.20 MiniProgramEnv/Windows';
 
 /* 512-bit RSA 密钥：公钥用于加密上传参数，私钥用于解密响应（与小程序一致） */
@@ -197,9 +197,16 @@ function rsaDecryptLong(text) {
  */
 export const CHANNELS = {
   direct: { id: 'direct', label: '直连' },
-  relay: { id: 'relay', label: '自建中转' },
-  demo: { id: 'demo', label: '示例数据' },
+  relay: { id: 'relay', label: '中转' },
+  history: { id: 'history', label: '历史数据（免查询）' },
 };
+
+export function normalizeMode(value) {
+  const v = String(value == null ? '' : value).trim();
+  if (v === 'history' || v === 'demo') return 'history';
+  if (v === 'relay') return 'relay';
+  return 'direct';
+}
 
 /* 中转有两种接法：
  *   prefix —— 自建中转（Worker / Node），把 /grdp-ele-third-unite/... 原样转发，推荐
@@ -222,7 +229,8 @@ export function relayUrl(base, mode, path) {
     : b + '/grdp-ele-third-unite' + path;
 }
 
-let channel = { mode: 'direct', relayBase: '', relayMode: 'prefix' };
+/* 默认就用历史数据：GitHub Pages 上不依赖任何中转，打开即可查 */
+let channel = { mode: 'history', relayBase: '', relayMode: 'prefix' };
 
 export function getChannel() {
   return { ...channel };
@@ -230,7 +238,7 @@ export function getChannel() {
 
 export function setChannel(next) {
   channel = {
-    mode: next && (next.mode === 'relay' || next.mode === 'demo') ? next.mode : 'direct',
+    mode: normalizeMode(next && next.mode),
     relayBase: normalizeRelayBase(next && next.relayBase),
     relayMode: normalizeRelayMode(next && next.relayMode),
   };
@@ -243,12 +251,32 @@ function endpoint(path) {
   return UPSTREAM + path;
 }
 
-/* 公共 CORS 代理只作为「自动检测」的候选展示，实测大多已失效，仅作兜底 */
+/* 公共 CORS 代理：2026-11 实测大量站点只剩 GET 能力或要求 key，
+ * 这里只留两个偶尔可用的兜底项，能否成功由「自动检测」当场判断。 */
 export const PUBLIC_RELAYS = [
-  { url: 'https://api.allorigins.win/raw?url=', mode: 'query', label: 'allorigins（公共代理）' },
-  { url: 'https://corsproxy.io/?url=', mode: 'query', label: 'corsproxy.io（公共代理）' },
-  { url: 'https://api.codetabs.com/v1/proxy?quest=', mode: 'query', label: 'codetabs（公共代理）' },
+  { url: 'https://api.allorigins.win/raw?url=', mode: 'query', label: 'allorigins（公共代理，时好时坏）' },
+  { url: 'https://api.codetabs.com/v1/proxy?quest=', mode: 'query', label: 'codetabs（公共代理，时好时坏）' },
 ];
+
+/* 中转清单：relay/endpoints.json 由仓库维护，用户也可以自己加一条进去
+ * （PR 或在页面里填地址后会记在本机）。检测时所有人同时并发实测，谁通用谁。 */
+let registryCache = null;
+export function loadRelayRegistry(force) {
+  if (registryCache && !force) return Promise.resolve(registryCache);
+  return fetch('relay/endpoints.json', { cache: force ? 'no-store' : 'force-cache' })
+    .then((r) => (r.ok ? r.json() : { endpoints: [] }))
+    .then((data) => {
+      const list = Array.isArray(data && data.endpoints) ? data.endpoints : [];
+      registryCache = list.filter((x) => x && x.url).map((x) => ({
+        url: normalizeRelayBase(x.url),
+        mode: normalizeRelayMode(x.mode),
+        label: String(x.label || x.url),
+        note: String(x.note || ''),
+      }));
+      return registryCache;
+    })
+    .catch(() => { registryCache = []; return registryCache; });
+}
 
 function sortKeys(obj) {
   const out = {};
@@ -256,7 +284,8 @@ function sortKeys(obj) {
   return out;
 }
 
-async function post(path, payload, options = {}) {
+/** 构造带签名的请求体（导出以便本地/命令行测试中转） */
+export function signBody(payload) {
   const biz = rsaEncryptLong(utf8Encode(JSON.stringify(payload)));
   const ts = Date.now();
   const rid = BigInt(String(Math.floor(Math.random() * 900) + 100) + String(ts)).toString(16);
@@ -271,6 +300,11 @@ async function post(path, payload, options = {}) {
     version: 'V3.0',
   };
   body.sign = md5(utf8Encode(JSON.stringify(sortKeys(body)) + APPSECRET)).toUpperCase();
+  return body;
+}
+
+async function post(path, payload, options = {}) {
+  const body = signBody(payload);
 
   const url = options.endpoint || endpoint(path);
   let response;
@@ -334,85 +368,120 @@ export async function probeRelay(relayBase, relayMode = 'prefix', options = {}) 
 const ROOM_TTL = 60 * 60 * 1000;
 const roomsCache = new Map();
 
-/* 示例数据：结构与真实接口完全一致，房号形如「3101」= 3 号楼 101 室 */
-function demoRooms() {
+/* ------------------------------------------------------------------ 历史数据（离线，仓库里预先抓好的真实数据）
+ * 目录结构：
+ *   data/meta.json                          截止时间、楼栋清单、总量
+ *   data/loudong/<楼栋号>/index.json         该楼房间清单
+ *   data/loudong/<楼栋号>/room-<房号>.json   单房间余额 + 逐笔记录 + 按人汇总
+ * 页面在「历史数据」通道下只读这些文件，不发任何请求，所以人人可用、互不影响。
+ */
+const HISTORY_DIR = 'data/';
+
+export function shortRoomCode(fullRoom, loudongName) {
+  const d = String(loudongName == null ? '' : loudongName).replace(/[^0-9]/g, '');
+  const s = String(fullRoom == null ? '' : fullRoom);
+  return d && s.startsWith(d) ? s.slice(d.length) : s;
+}
+
+let metaCache = null;
+export function historyMeta(force) {
+  if (metaCache && !force) return Promise.resolve(metaCache);
+  return fetch(HISTORY_DIR + 'meta.json', { cache: force ? 'no-store' : 'force-cache' })
+    .then((r) => {
+      if (!r.ok) throw new Error('历史数据缺失（data/meta.json 读不到）');
+      return r.json();
+    })
+    .then((meta) => {
+      metaCache = meta;
+      return meta;
+    });
+}
+
+const loudongCache = new Map();
+export function historyLoudong(no, force) {
+  const key = String(no);
+  if (loudongCache.has(key) && !force) return Promise.resolve(loudongCache.get(key));
+  return fetch(HISTORY_DIR + 'loudong/' + key + '/index.json', { cache: force ? 'no-store' : 'force-cache' })
+    .then((r) => {
+      if (!r.ok) throw new Error('历史数据里没有「' + key + ' 号楼」');
+      return r.json();
+    })
+    .then((data) => {
+      loudongCache.set(key, data);
+      return data;
+    });
+}
+
+export function historyRoomFile(loudongNo, short) {
+  const url = HISTORY_DIR + 'loudong/' + loudongNo + '/room-' + short + '.json';
+  return fetch(url, { cache: 'force-cache' }).then((r) => {
+    if (!r.ok) throw new Error('历史数据里没有 ' + loudongNo + ' 号楼 ' + short + ' 室（' + url + '）');
+    return r.json();
+  });
+}
+
+/** 历史数据模式下的“房间清单”，结构与真实接口一致 */
+async function historyRooms() {
+  const meta = await historyMeta();
+  const lists = await Promise.all(meta.loudongs.map((l) => historyLoudong(l.no)));
   const rows = [];
-  const names = ['一号楼', '二号楼', '三号楼', '四号楼', '五号楼', '六号楼'];
-  names.forEach((name, bidx) => {
-    for (let f = 1; f <= 6; f++) {
-      for (let r = 1; r <= 12; r++) {
-        const roomNo = String(f) + String(100 + r).slice(1);
-        rows.push({
-          loudongId: String(85 + bidx),
-          loudong: name,
-          roomId: String(10000 + bidx * 500 + f * 20 + r),
-          room: roomNo,
-        });
-      }
-    }
+  lists.forEach((list) => {
+    (list.rooms || []).forEach((r) => {
+      rows.push({
+        loudongId: String(list.no),
+        loudong: list.name,
+        roomId: r.roomId,
+        room: r.room,
+        short: r.short,
+        records: r.records,
+      });
+    });
   });
   return rows;
 }
 
-function demoSeed(key) {
-  let h = 2166136261;
-  const s = String(key);
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
+/** 楼栋下拉：历史模式读 meta，实时模式从房间清单聚合 */
+export async function loudongOptions(options = {}) {
+  if (channel.mode === 'history') {
+    const meta = await historyMeta();
+    return meta.loudongs.map((l) => ({ no: l.no, name: l.name, rooms: l.rooms, records: l.records }));
   }
-  return () => {
-    h ^= h << 13; h >>>= 0;
-    h ^= h >>> 17;
-    h ^= h << 5; h >>>= 0;
-    return h / 4294967296;
-  };
+  const rows = await allRooms(options.xiaoquId, options.datasource, options);
+  const map = new Map();
+  rows.forEach((r) => {
+    const no = loudongNumber(r.loudong);
+    if (!no) return;
+    if (!map.has(no)) map.set(no, { no, name: r.loudong, rooms: 0, records: null });
+    const item = map.get(no);
+    if (/^\d{2,}$/.test(shortRoomCode(r.room, r.loudong))) item.rooms += 1;
+  });
+  return [...map.values()].sort((a, b) => a.no - b.no);
 }
 
-function demoRoomValues(room) {
-  const rnd = demoSeed('val|' + room.loudongId + '|' + room.roomId);
-  const buy = Math.round((200 + rnd() * 12000) * 100) / 100;
-  const used = Math.round((buy * (0.55 + rnd() * 0.44)) * 100) / 100;
-  return { xiaoqu: '示例校区', used, buy, left: Math.round((buy - used) * 100) / 100, at: new Date().toISOString() };
-}
-
-function demoRecords(room) {
-  const rnd = demoSeed('rec|' + room.loudongId + '|' + room.roomId);
-  const buyers = [];
-  const total = 40 + Math.floor(rnd() * 220);
-  const count = 3 + Math.floor(rnd() * 6);
-  for (let i = 0; i < count; i++) buyers.push(String(1000000000 + Math.floor(rnd() * 899999999)));
-  const now = Date.now();
-  const span = 1000 * 60 * 60 * 24 * 420;
-  const rows = [];
-  for (let i = 0; i < total; i++) {
-    const t = new Date(now - Math.floor(rnd() * span));
-    rows.push({
-      time: t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' +
-        String(t.getDate()).padStart(2, '0') + ' ' + String(t.getHours()).padStart(2, '0') + ':' +
-        String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0'),
-      amt: Math.round((10 + rnd() * 190) * 100) / 100,
-      buyer: buyers[Math.floor(rnd() * buyers.length)],
-      recNo: 'DEMO' + String(100000 + i),
-      outNo: 'OUT' + String(900000 + Math.floor(rnd() * 99999)),
-      room: room.roomName,
-      loudong: room.loudongName,
-    });
+/** 房间下拉：必须先选楼栋 */
+export async function roomOptions(loudongNo, options = {}) {
+  const no = String(loudongNo == null ? '' : loudongNo).replace(/[^0-9]/g, '');
+  if (!no) return [];
+  if (channel.mode === 'history') {
+    const list = await historyLoudong(no);
+    return (list.rooms || [])
+      .filter((r) => /^\d{2,}$/.test(r.short))
+      .map((r) => ({ short: r.short, room: r.room, roomId: r.roomId, records: r.records, left: r.left }));
   }
-  rows.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
-  return rows;
-}
-
-function demoDelay() {
-  return new Promise((resolve) => setTimeout(resolve, 260));
+  const rows = await allRooms(options.xiaoquId, options.datasource, options);
+  return rows
+    .filter((r) => loudongNumber(r.loudong) === parseInt(no, 10))
+    .map((r) => ({ short: shortRoomCode(r.room, r.loudong), room: r.room, roomId: r.roomId }))
+    .filter((r) => /^\d{2,}$/.test(r.short))
+    .sort((a, b) => Number(a.short) - Number(b.short));
 }
 
 export function allRooms(xiaoquId = DEFAULT_XIAOQU, datasource = DEFAULT_DATASOURCE, options = {}) {
   const key = xiaoquId + '|' + datasource;
   const hit = roomsCache.get(key);
   if (hit && !options.force && Date.now() - hit.ts < ROOM_TTL) return hit.promise;
-  if (channel.mode === 'demo') {
-    const promise = demoDelay().then(demoRooms);
+  if (channel.mode === 'history') {
+    const promise = historyRooms();
     roomsCache.set(key, { ts: Date.now(), promise });
     return promise;
   }
@@ -514,9 +583,20 @@ export function describeRoom(room) {
 
 /* ------------------------------------------------------------------ 查询 */
 export async function queryRoom(room, options = {}) {
-  if (channel.mode === 'demo') {
-    await demoDelay();
-    return demoRoomValues(room);
+  if (channel.mode === 'history') {
+    const no = String(room.loudongNo || loudongNumber(room.loudongName) || room.loudongId || '');
+    const short = room.roomNo || shortRoomCode(room.roomName, room.loudongName);
+    const file = await historyRoomFile(no, short);
+    if (!file.balance) throw new Error('历史数据里这一间没有余额快照');
+    return {
+      xiaoqu: '历史数据',
+      used: Number(file.balance.used) || 0,
+      buy: Number(file.balance.buy) || 0,
+      left: Number(file.balance.left) || 0,
+      at: file.balance.at || file.cutoff,
+      history: true,
+      cutoff: file.cutoff,
+    };
   }
   const res = await post('/api/school/ele/third/room/get', {
     xiaoquId: room.xiaoquId,
@@ -538,9 +618,20 @@ export async function queryRoom(room, options = {}) {
 }
 
 export async function fetchRecharge(room, size = 800, options = {}) {
-  if (channel.mode === 'demo') {
-    await demoDelay();
-    return demoRecords(room).slice(0, size);
+  if (channel.mode === 'history') {
+    const no = String(room.loudongNo || loudongNumber(room.loudongName) || room.loudongId || '');
+    const short = room.roomNo || shortRoomCode(room.roomName, room.loudongName);
+    const file = await historyRoomFile(no, short);
+    return (file.items || []).slice(0, size).map((r) => ({
+      time: r.time,
+      amt: r.amt,
+      buyer: String(r.buyer == null ? '' : r.buyer),
+      recNo: r.recNo,
+      outNo: r.outNo,
+      room: file.room,
+      loudong: file.name,
+      history: true,
+    }));
   }
   const res = await post('/api/school/ele/third/recharge/list', {
     xiaoquId: room.xiaoquId,

@@ -18,11 +18,11 @@
       </div>
       <div class="brand-text">
         <h1>无锡科技职业技术学院 · 电费查询</h1>
-        <div class="sub">静态页面 · 数据实时取自学校缴费平台 · 设置只保存在你自己的浏览器</div>
+        <div class="sub">纯静态页面 · 默认用仓库内的历史台账（离线免查询，标注数据截止时间）· 设置只保存在你自己的浏览器</div>
       </div>
     </div>
     <div class="head-actions">
-      <span class="chip" id="chip-version">v1.1.0</span>
+      <span class="chip" id="chip-version">v1.2.0</span>
       <button class="btn mini ghost" id="btn-open-room" type="button" title="楼栋号 / 房间号 / 校区 / 数据源">房间设置</button>
       <button class="btn mini ghost" id="btn-open-channel" type="button" title="取数通道与中转部署说明">中转通道</button>
     </div>
@@ -119,7 +119,7 @@
   </section>
 
   <div class="footnote">
-    <span id="foot-version">WXSC_elec_bill_Web v1.1.0</span>
+    <span id="foot-version">WXSC_elec_bill_Web v1.2.0</span>
     <span>·</span>
     <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
     <span>·</span>
@@ -146,39 +146,38 @@
     <section id="panel-room">
       <form class="row" id="form-room" autocomplete="off">
         <div class="field">
-          <label class="f" for="in-loudong">楼栋号</label>
-          <input type="number" id="in-loudong" inputmode="numeric" min="1" max="200" placeholder="例如 3">
+          <label class="f" for="in-loudong">① 选楼栋</label>
+          <select id="in-loudong"><option value="">请选择楼栋</option></select>
         </div>
         <div class="field">
-          <label class="f" for="in-room">房间号</label>
-          <input type="number" id="in-room" inputmode="numeric" min="1" max="99999" placeholder="例如 101">
-        </div>
-        <div class="field">
-          <label class="f" for="in-xiaoqu">小区 / 校区 ID</label>
-          <input type="number" id="in-xiaoqu" inputmode="numeric" min="1" placeholder="1">
-        </div>
-        <div class="field">
-          <label class="f" for="in-datasource">数据源</label>
-          <input type="text" id="in-datasource" placeholder="cg1_1">
-        </div>
-        <div class="field field-action">
-          <button class="btn primary" id="btn-save-room" type="submit">保存并重新解析</button>
+          <label class="f" for="in-room">② 选房间</label>
+          <select id="in-room" disabled><option value="">请先选楼栋</option></select>
         </div>
       </form>
       <div class="bar room-bar">
-        <button class="btn" id="btn-room-list" type="button">查询可用房间</button>
-        <span class="bar-note" id="room-list-note">先填楼栋号再点，列出该楼全部房间；不填楼栋号则先列楼栋</span>
-      </div>
-      <div class="roomlist" id="room-list-wrap" hidden>
-        <div class="roomlist-body" id="room-list"></div>
-        <div class="roomlist-foot">
-          <button class="btn mini ghost" id="btn-room-list-close" type="button">收起</button>
-        </div>
+        <button class="btn" id="btn-room-list" type="button">刷新房间列表</button>
+        <span class="bar-note" id="room-list-note">先选楼栋，房间下拉会按楼栋自动匹配</span>
       </div>
       <div class="hint">
-        楼栋号与房间号只填数字，页面会自动拼成完整房间编码去匹配（3 号楼 101 室 → 楼栋 3、房间 101）。
+        选中房间就会自动查询。房间号只在所选楼栋内匹配（3 号楼 + 101 → 3 号楼 101 室）。
         设置只写入本机 localStorage，不会上传，也不会影响别人。
       </div>
+      <details class="mini-details">
+        <summary>高级：小区 / 校区 ID 与数据源</summary>
+        <div class="row">
+          <div class="field">
+            <label class="f" for="in-xiaoqu">小区 / 校区 ID</label>
+            <input type="number" id="in-xiaoqu" inputmode="numeric" min="1" placeholder="1">
+          </div>
+          <div class="field">
+            <label class="f" for="in-datasource">数据源</label>
+            <input type="text" id="in-datasource" placeholder="cg1_1">
+          </div>
+          <div class="field field-action">
+            <button class="btn primary" id="btn-save-room" type="submit">重新解析当前房间</button>
+          </div>
+        </div>
+      </details>
       <div class="recent" id="recent-rooms" hidden>
         <span class="recent-label">本机用过的房间</span>
         <div class="recent-list" id="recent-list"></div>
@@ -195,16 +194,17 @@
         不保存任何 Cookie、账号或查询结果，因此多人同时用依然互不影响。
       </p>
       <p class="hint">
-        三条路：①点下面「自动检测可用中转」，能用的直接选；②自己部署一个中转
-        （仓库 <code>relay/</code> 里的 Cloudflare Worker 或本机 Node，命令见 README）；③先用「示例数据」看界面。
+        三条路：①<b>直接用历史数据</b>（仓库里已经放好按楼栋/房间分好的真实台账，截至页面上标注的时间，完全离线、人人可用）；
+        ②点「自动检测可用中转」，能用的直接选（2026 年起公共代理基本只支持 GET，多半只剩本机/自建中转可用）；
+        ③自己部署一个中转（<code>relay/</code> 里的 Cloudflare Worker 或本机 Node）。
       </p>
       <div class="row">
         <div class="field">
           <label class="f" for="in-mode">取数方式</label>
           <select id="in-mode">
+            <option value="history">历史数据（免查询，离线快照）</option>
+            <option value="relay">中转（实时数据）</option>
             <option value="direct">直连（同源部署 / 反向代理）</option>
-            <option value="relay">中转（GitHub Pages 用这个）</option>
-            <option value="demo">示例数据（只看界面，不发请求）</option>
           </select>
         </div>
         <div class="field" id="relay-field">
@@ -216,8 +216,9 @@
         </div>
       </div>
       <div class="bar room-bar">
+        <button class="btn" id="btn-use-history" type="button">直接用历史数据</button>
         <button class="btn" id="btn-detect-relay" type="button">自动检测可用中转</button>
-        <span class="bar-note" id="detect-note">逐个实测：已保存 / 已填 / 链接参数 / 本机 Node 中转 / 本站同源 / 公共代理</span>
+        <span class="bar-note" id="detect-note">逐个实测：已保存 / 已填 / 链接参数 / 本机中转 / 本站同源 / 公共代理</span>
       </div>
       <div class="cands" id="relay-candidates" hidden></div>
       <details class="mini-details">
@@ -253,12 +254,12 @@
     <div class="gstep" id="gstep-1">
       <h4>① 先选一条能用的取数通道</h4>
       <p class="hint">
-        学校接口不允许浏览器跨域直连，GitHub Pages 上必须走一次中转。点下面的按钮自动实测，
-        能用的会变绿，选一个最快的即可（地址只记在你自己浏览器里）。
+        最快的是<b>直接用历史数据</b>：仓库里已经放好按楼栋 / 房间分好的真实充值台账（截至页面上标注的时间），
+        完全离线、不用中转、人人可用。想查「此刻」的实时数据，再点「检测可用中转」自建一条（地址只记在你自己浏览器里）。
       </p>
       <div class="bar room-bar">
-        <button class="btn primary" id="guide-detect" type="button">检测可用中转</button>
-        <button class="btn" id="guide-demo" type="button">先用示例数据看看</button>
+        <button class="btn primary" id="guide-demo" type="button">直接用历史数据</button>
+        <button class="btn" id="guide-detect" type="button">检测可用中转</button>
         <span class="bar-note" id="guide-detect-note">还没检测</span>
       </div>
       <div class="cands" id="guide-cands" hidden></div>
