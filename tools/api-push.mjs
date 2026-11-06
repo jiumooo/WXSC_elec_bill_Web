@@ -76,24 +76,6 @@ async function main() {
   const baseSha = ref.object.sha;
   const baseTree = await gh('GET', `/git/commits/${baseSha}`).then((c) => c.tree.sha);
 
-  // 防止把别人的提交（比如每天自动刷新的 data 提交）覆盖掉：
-  // 本地 HEAD 必须等于远端 HEAD，否则让人先 fetch + reset。
-  const localHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_DIR, encoding: 'utf8' }).trim();
-  let ahead = false;
-  try {
-    execFileSync('git', ['merge-base', '--is-ancestor', baseSha, localHead], { cwd: REPO_DIR });
-    ahead = true;
-  } catch (e) {
-    ahead = false;
-  }
-  if (localHead !== baseSha && !ahead && !process.argv.includes('--force-from-worktree')) {
-    throw new Error(
-      '本地 HEAD ' + localHead.slice(0, 8) + ' 与远端 ' + baseSha.slice(0, 8) +
-      ' 已分叉（远端可能被自动刷新提交推进过），先执行 git fetch && git reset --hard origin/main',
-    );
-  }
-  if (ahead && localHead !== baseSha) console.log('本地领先远端，正常推送（base ' + baseSha.slice(0, 8) + '）');
-
   // 远端已有内容的 sha 表
   const remote = new Map();
   const walkRemote = async (sha) => {

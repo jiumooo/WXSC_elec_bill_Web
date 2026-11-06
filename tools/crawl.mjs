@@ -31,14 +31,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pad2 = (n) => String(n).padStart(2, '0');
 
 function stamp(date) {
-  // 统一用北京时间，避免在 GitHub runner（UTC）里抓出来的截止时间比本地慢 8 小时
-  const fmt = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(date).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
-  return `${fmt.year}-${fmt.month}-${fmt.day} ${fmt.hour === '24' ? '00' : fmt.hour}:${fmt.minute}:${fmt.second}`;
+  return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) +
+    ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
 }
 
 function shortName(fullRoom, loudongNo) {
@@ -198,7 +192,6 @@ async function main() {
   await writeJson(path.join(OUT, 'meta.json'), {
     version: 1,
     cutoff,
-    timezone: 'Asia/Shanghai',
     generatedAt: new Date().toISOString(),
     elapsedSeconds: Math.round((Date.now() - started) / 1000),
     xiaoquId: api.DEFAULT_XIAOQU,

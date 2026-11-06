@@ -103,7 +103,6 @@ async function main() {
 
   const next = meta || { version: 1, cutoff, xiaoquId: '1', datasource: 'cg1_1' };
   next.cutoff = cutoff;
-  next.timezone = next.timezone || 'Asia/Shanghai';
   next.rooms = loudongMeta.reduce((a, x) => a + x.rooms, 0);
   next.records = totalRecords;
   next.loudongs = loudongMeta;

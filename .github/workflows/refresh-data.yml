@@ -1,6 +1,8 @@
 name: Refresh history data
 
-# 每天自动用真实接口刷新 data/（不需要任何中转：跑在 GitHub 的机器上，服务端直连）
+# 每天用真实接口刷新 data/，刷新完顺手部署一次 Pages。
+# 注意：用 GITHUB_TOKEN 推的提交不会触发其它 workflow（GitHub 防递归），
+# 所以部署要写在本 workflow 里，不能指望 pages.yml 被自动触发。
 on:
   schedule:
     - cron: '17 19 * * *'   # UTC 19:17 = 北京时间 03:17
@@ -17,6 +19,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: refresh-data
@@ -26,6 +30,8 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,14 +53,45 @@ jobs:
         run: node tools/normalize-data.mjs
 
       - name: Commit if changed
+        id: commit
         run: |
           if [ -z "$(git status --porcelain data)" ]; then
-            echo "数据没有变化，跳过提交"
+            echo "数据没有变化"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data
-          SUMMARY="chore(data): refresh $(date -u '+%Y-%m-%d %H:%M') UTC"
-          git commit -m "$SUMMARY"
+          git commit -m "chore(data): refresh $(date -u '+%Y-%m-%d %H:%M') UTC"
           git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Stage site
+        run: |
+          mkdir -p _site/relay
+          cp -R index.html assets README.md LICENSE .nojekyll _site/
+          cp relay/worker.js relay/endpoints.json relay/deno.ts relay/server.mjs _site/relay/
+          cp -R data _site/data
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
