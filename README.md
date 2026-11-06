@@ -1,16 +1,22 @@
 # WXSC_elec_bill_Web
 
+**[👉 点这里直接查：https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**
+
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
+
 无锡科技职业技术学院（WXSC）电费查询的纯静态网页版：查当前房间余额、设置房间、按时间范围查充值记录，并把结果导出成 **Excel** 或 **Markdown**。
 
 它脱胎于 AstrBot 插件 `astrbot_plugin_wxsc_elec_bill`——只保留了真正有用的查询能力（去掉了群通知、定时推送、NapCat 之类的机器人侧功能），改成一个可以直接丢进 **GitHub Pages** 的静态站点。
 
 - **版本**：`1.0.0`
 - **形态**：纯前端（HTML + CSS + 原生 ES Module），零依赖、零构建步骤
-- **线上地址**：`https://jiumooo.github.io/WXSC_elec_bill_Web/`
+- **线上地址（点击即用）**：[https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)
 
 ---
 
 ## 快速开始
+
+打开 **[https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**，然后：
 
 1. **先给页面一个取数通道**：展开页面底部「数据通道与部署说明」→ 取数方式选「自建中转」→ 填中转地址 → 点「保存并测试」。
    （中转是干什么的、两分钟怎么搭，见下面 [数据通道](#数据通道重要) 一节。）
@@ -66,7 +72,7 @@ npx wrangler deploy
 ```
 
 把该地址填进页面的「中转地址」，点「保存并测试」。也可直接带参数打开：
-`https://jiumooo.github.io/WXSC_elec_bill_Web/?relay=https://wxsc-elec-relay.xxx.workers.dev`
+**[https://jiumooo.github.io/WXSC_elec_bill_Web/?relay=https://wxsc-elec-relay.xxx.workers.dev](https://jiumooo.github.io/WXSC_elec_bill_Web/?relay=https://wxsc-elec-relay.xxx.workers.dev)**（把域名换成你自己的）
 
 可选变量（`relay/wrangler.toml`）：`ALLOWED_ORIGIN` 收紧到只允许你的站点，`UPSTREAM_HOST` 换上游。
 
@@ -81,6 +87,8 @@ node relay/server.mjs
 它同时发布仓库根目录的静态文件并转发 `/grdp-ele-third-unite/*`，所以本地看到的效果和线上一致。
 
 ### 部署页面到 GitHub Pages
+
+线上站点：**[https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**
 
 仓库已开启 Pages，源就是本仓库 `main` 分支根目录（纯静态、无构建）。改完直接推：
 
