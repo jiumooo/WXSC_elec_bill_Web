@@ -579,7 +579,16 @@ function relayCandidates() {
   };
   const ch = api.getChannel();
   const saved = store.get(KEY.channel, null);
+  out.push({
+    builtin: true,
+    url: 'data/ · 仓库内的历史台账',
+    label: '历史数据（离线快照，必可用）',
+    mode: 'history',
+    hint: '不发任何网络请求，数据截至 ' + (S.cutoff || '—'),
+    state: 'ok', ms: 0, rooms: 0, note: '',
+  });
   add(($('in-relay') || {}).value, '输入框里填的地址', ch.relayMode);
+
   if (saved && saved.relayBase) add(saved.relayBase, '上次保存的地址', saved.relayMode);
   let q = '';
   try { q = new URLSearchParams(location.search).get('relay') || ''; } catch (e) { q = ''; }
@@ -596,15 +605,19 @@ function renderRelayCandidates(list, boxId) {
   const box = $(boxId || 'relay-candidates');
   if (!box) return;
   box.hidden = false;
+  const chNow = api.getChannel();
   box.innerHTML = list.map((c, i) => {
     const state = c.state === 'ok' ? 'ok' : c.state === 'fail' ? 'fail' : 'idle';
-    const meta = c.state === 'ok'
-      ? '可用 · ' + c.ms + ' ms · 读到 ' + c.rooms + ' 个房间'
-      : c.state === 'fail'
-        ? '不可用 · ' + esc((c.note || '').slice(0, 110)) + (c.hint ? ' · ' + esc(c.hint) : '')
-        : c.state === 'testing' ? '检测中…' : (c.hint ? esc(c.hint) : '未检测');
-    const active = api.getChannel().mode === 'relay' &&
-      api.getChannel().relayBase === c.url && api.getChannel().relayMode === c.mode;
+    const meta = c.builtin
+      ? '恒可用 · 离线 · ' + esc(c.hint || '')
+      : c.state === 'ok'
+        ? '可用 · ' + c.ms + ' ms · 读到 ' + c.rooms + ' 个房间'
+        : c.state === 'fail'
+          ? '不可用 · ' + esc((c.note || '').slice(0, 110)) + (c.hint ? ' · ' + esc(c.hint) : '')
+          : c.state === 'testing' ? '检测中…' : (c.hint ? esc(c.hint) : '未检测');
+    const active = c.builtin
+      ? chNow.mode === 'history'
+      : (chNow.mode === 'relay' && chNow.relayBase === c.url && chNow.relayMode === c.mode);
     return '<div class="cand ' + state + (active ? ' on' : '') + '">' +
       '<div class="cand-main"><span class="cand-label">' + esc(c.label) + (active ? ' · 正在使用' : '') + '</span>' +
       '<code class="cand-url">' + esc(c.url) + '</code></div>' +
@@ -622,17 +635,18 @@ async function detectRelays(target) {
   const btnId = opt.btn || 'btn-detect-relay';
   const btn = $(btnId);
   const note = $(noteId);
-  relayList = relayCandidates();
+  if (btn) { btn.disabled = true; btn.textContent = '检测中…'; }
+  if (note) note.textContent = '正在检查本机 / 公共中转…（离线历史数据始终可用，不需要检测）';
   if (!registryEndpoints.length) {
-    try { registryEndpoints = await api.loadRelayRegistry(); } catch {}
+    try { registryEndpoints = await api.loadRelayRegistry(); } catch (e) { registryEndpoints = []; }
   }
   relayList = relayCandidates();
-  if (!relayList.length) { toast('没有可检测的地址，先在「中转地址」里填一个'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = '检测中…'; }
-  if (note) note.textContent = '正在并发实测 ' + relayList.length + ' 个候选地址…';
-  relayList.forEach((c) => { c.state = 'testing'; });
+  relayList.forEach((c) => {
+    if (!c.builtin) c.state = 'testing';
+  });
   renderRelayCandidates(relayList, boxId);
   await Promise.all(relayList.map(async (c) => {
+    if (c.builtin) return;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 9000);
     try {
@@ -648,20 +662,26 @@ async function detectRelays(target) {
       renderRelayCandidates(relayList, boxId);
     }
   }));
-  const okCount = relayList.filter((c) => c.state === 'ok').length;
+  const okCount = relayList.filter((c) => c.state === 'ok' && !c.builtin).length;
   if (note) {
     note.textContent = okCount
-      ? '检测完成：' + okCount + ' 个可用 · 点「用它查询」，地址会记在本机'
-      : '检测完成：没有可用地址 —— 公共代理 2026 年起基本只支持 GET，靠不住。点「直接用历史数据」照样能查，或者跑一条 node 命令自建中转（见下面两步）';
+      ? '检测完成：' + okCount + ' 个中转可用 · 点「用它查询」，地址会记在本机。也可以直接用第一行的历史数据。'
+      : '检测完成：这台电脑上没有可用的中转（公共代理 2026 年起只支持 GET，全部失效）—— 这不是页面坏了：第一行的「历史数据」不要网络、随时能查，点它右侧的「用它查询」即可。要查此刻的实时数据，再照下面两步跑一条 node 命令自建中转。';
   }
   renderRelayCandidates(relayList, boxId);
   if (btn) { btn.disabled = false; btn.textContent = '自动检测可用中转'; }
-  toast(okCount ? '找到 ' + okCount + ' 个可用中转' : '没有检测到可用中转', 4200);
+  toast(okCount ? '找到 ' + okCount + ' 个可用中转' : '没有可用中转，用第一行的历史数据照样能查', 4600);
 }
 
 async function pickRelay(index) {
   const c = relayList[index];
   if (!c) return;
+  if (c.builtin) {
+    await useHistory();
+    const guide = $('guide');
+    if (guide && !guide.hidden && G.step <= 1) guideGo(2);
+    return;
+  }
   const saved = api.setChannel({ mode: 'relay', relayBase: c.url, relayMode: c.mode });
   store.set(KEY.channel, saved);
   const modeSel = $('in-mode');
@@ -687,8 +707,22 @@ async function pickRelay(index) {
   else toast('通道就绪，接着在「房间设置」里选楼栋和房间就能查了', 3400);
 }
 
-function renderChannelNote() {
-  const el = $('channel-note');
+async function useHistory(quiet) {
+  const saved = api.setChannel({ mode: 'history', relayBase: '' });
+  store.set(KEY.channel, saved);
+  loadChannelInputs();
+  renderChips();
+  const meta = await api.historyMeta().catch(() => null);
+  S.cutoff = (meta && meta.cutoff) || S.cutoff;
+  renderChannelNote();
+  renderData();
+  if (relayList.length) renderRelayCandidates(relayList);
+  if (relayList.length) renderRelayCandidates(relayList, 'guide-cands');
+  await loadLoudongSelect(false);
+  if (!quiet) toast('已切到历史数据（离线，截至 ' + (S.cutoff || '—') + '）', 3200);
+}
+
+function renderChannelNote() {  const el = $('channel-note');
   if (!el) return;
   const ch = api.getChannel();
   if (ch.mode === 'history') {
@@ -710,6 +744,10 @@ function openDrawer(which) {
   if (room) room.hidden = which !== 'room';
   if (chan) chan.hidden = which !== 'channel';
   if (title) title.textContent = which === 'channel' ? '中转通道' : '房间设置';
+  const tabRoom = $('btn-tab-room');
+  const tabChan = $('btn-tab-channel');
+  if (tabRoom) tabRoom.classList.toggle('on', which !== 'channel');
+  if (tabChan) tabChan.classList.toggle('on', which === 'channel');
   drawer.hidden = false;
   drawer.setAttribute('aria-hidden', 'false');
   syncScrim();
@@ -1095,6 +1133,10 @@ function bind() {
   if (openRoom) openRoom.addEventListener('click', () => openDrawer('room'));
   const openChan = $('btn-open-channel');
   if (openChan) openChan.addEventListener('click', () => openDrawer('channel'));
+  const tabRoom = $('btn-tab-room');
+  if (tabRoom) tabRoom.addEventListener('click', () => openDrawer('room'));
+  const tabChan = $('btn-tab-channel');
+  if (tabChan) tabChan.addEventListener('click', () => openDrawer('channel'));
   const closeBtn = $('btn-close-drawer');
   if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
   const scrim = $('scrim');
@@ -1235,17 +1277,7 @@ function bind() {
   if (btnDetect) btnDetect.addEventListener('click', detectRelays);
   const btnHistory = $('btn-use-history');
   if (btnHistory) {
-    btnHistory.addEventListener('click', async () => {
-      const saved = api.setChannel({ mode: 'history', relayBase: '' });
-      store.set(KEY.channel, saved);
-      loadChannelInputs();
-      renderChips();
-      S.cutoff = (await api.historyMeta().catch(() => null) || {}).cutoff || S.cutoff;
-      renderChannelNote();
-      renderData();
-      await loadLoudongSelect(true);
-      toast('已切到历史数据（离线，截至 ' + (S.cutoff || '—') + '）', 3200);
-    });
+    btnHistory.addEventListener('click', () => useHistory());
   }
   const candBox = $('relay-candidates');
   if (candBox) {

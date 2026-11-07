@@ -2,7 +2,7 @@
 
 **[👉 点这里直接查：https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.2.3-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.2.4-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
 
 无锡科技职业技术学院（WXSC）电费查询的纯静态网页版：查当前房间余额、设置房间、按时间范围查充值记录，并把结果导出成 **Excel** 或 **Markdown**。
 
@@ -112,17 +112,20 @@ node tools/build-index.mjs                     # 合并成 data/index.json（页
 
 ### 先试「自动检测可用中转」
 
-页面顶栏 **「中转通道」** → **「自动检测可用中转」**，会并发实测这些候选并显示耗时与结果：
+页面顶栏 **「中转通道」** → **「自动检测可用中转」**，会并发实测这些候选并显示耗时与结果。
+**第一行永远是「历史数据（离线快照，必可用）」**——它不需要任何网络，点「用它查询」立即切过去，所以检测结果不会出现「一条都没有」的死局：
 
 | 候选 | 说明 |
 | --- | --- |
+| **历史数据（离线快照，必可用）** | 仓库里的 `data/` 台账，恒可用；当前正在用它时会标「正在使用」 |
 | 输入框 / 上次保存 / 链接参数 | 你自己填过的地址 |
 | `http://127.0.0.1:8787`、`http://localhost:8787` | 本机 Node 中转（跑过 `node relay/server.mjs` 才会绿） |
+| `http://127.0.0.1:8788` | 本机 Deno 中转（跑过 `deno run --allow-net relay/deno.ts` 才会绿） |
 | `relay/endpoints.json` 里登记的地址 | 社区自建中转登记表，欢迎 PR 增行 |
 | 本站同源 | 页面本身不是 `*.github.io` 时才有意义（反向代理部署） |
 | allorigins / codetabs | 公共代理兜底。**2026 年起基本只支持 GET**，上游只认 POST，检测多半全红，属正常 |
 
-变绿的行点 **「用它查询」** 即切换过去并立刻重查；全红就点 **「直接用历史数据」**，或者用下面三种自建方式（都免费，5 分钟）。
+变绿的行点 **「用它查询」** 即切换过去并立刻重查；只剩历史数据一条也不影响使用，想查「此刻」的实时数据再用下面三种自建方式（都免费，5 分钟）。
 
 ### 三种自建中转（任选一种）
 
@@ -204,6 +207,12 @@ git push
 ```
 
 ## 更新日志
+
+### 1.2.4
+
+- **中转检测列表的第一行改成「历史数据（离线快照，必可用）」**：以前点「自动检测可用中转」在真实网络下经常 5 条全红（公共代理确实都失效了），看着像功能坏了。现在离线台账直接作为第一行的候选，标「恒可用 · 离线」，点它右边的「用它查询」立即切过去；检测结果也会写明「也可以直接用第一行的历史数据」。
+- **检测文案不再制造焦虑**：全红时提示「这台电脑上没有可用的中转 —— 这不是页面坏了：第一行的「历史数据」不要网络、随时能查」，并给出自建中转的两步命令。
+- **抽屉顶部加「房间设置 / 中转通道」两个 tab**：开着抽屉就能在两个面板之间切换，不用先关掉再点另一个（原来抽屉遮罩会挡住顶栏按钮）。
 
 ### 1.2.3
 

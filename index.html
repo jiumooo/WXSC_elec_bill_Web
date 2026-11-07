@@ -197,6 +197,8 @@ body.no-scroll{overflow:hidden}
 .drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:14px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
 .drawer-head h2{font-size:15px;margin:0;font-weight:640}
+.drawer-tabs{display:flex;gap:6px;margin-left:auto}
+.drawer-tabs .btn.on{border-color:var(--brand);color:var(--brand);background:var(--brand-soft);font-weight:600}
 .drawer-body{padding:16px 18px 32px;overflow:auto;flex:1 1 auto}
 @keyframes slide{from{transform:translateX(18px);opacity:.6}to{transform:none;opacity:1}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
@@ -324,7 +326,7 @@ body.no-scroll{overflow:hidden}
       </div>
     </div>
     <div class="head-actions">
-      <span class="chip" id="chip-version">v1.2.3</span>
+      <span class="chip" id="chip-version">v1.2.4</span>
       <button class="btn mini ghost" id="btn-open-room" type="button" title="楼栋号 / 房间号 / 校区 / 数据源">房间设置</button>
       <button class="btn mini ghost" id="btn-open-channel" type="button" title="取数通道与中转部署说明">中转通道</button>
     </div>
@@ -421,7 +423,7 @@ body.no-scroll{overflow:hidden}
   </section>
 
   <div class="footnote">
-    <span id="foot-version">WXSC_elec_bill_Web v1.2.3</span>
+    <span id="foot-version">WXSC_elec_bill_Web v1.2.4</span>
     <span>·</span>
     <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
     <span>·</span>
@@ -440,6 +442,10 @@ body.no-scroll{overflow:hidden}
 <aside class="drawer" id="drawer" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <div class="drawer-head">
     <h2 id="drawer-title">房间设置</h2>
+    <div class="drawer-tabs">
+      <button class="btn mini" id="btn-tab-room" type="button">房间设置</button>
+      <button class="btn mini" id="btn-tab-channel" type="button">中转通道</button>
+    </div>
     <button class="btn mini ghost" id="btn-close-drawer" type="button">关闭</button>
   </div>
   <div class="drawer-body">

@@ -187,6 +187,8 @@ body.no-scroll{overflow:hidden}
 .drawer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:14px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
 .drawer-head h2{font-size:15px;margin:0;font-weight:640}
+.drawer-tabs{display:flex;gap:6px;margin-left:auto}
+.drawer-tabs .btn.on{border-color:var(--brand);color:var(--brand);background:var(--brand-soft);font-weight:600}
 .drawer-body{padding:16px 18px 32px;overflow:auto;flex:1 1 auto}
 @keyframes slide{from{transform:translateX(18px);opacity:.6}to{transform:none;opacity:1}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
