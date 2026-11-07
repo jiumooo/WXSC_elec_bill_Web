@@ -601,6 +601,13 @@ function relayCandidates() {
   return out;
 }
 
+function shortNote(msg) {
+  return String(msg || '')
+    .replace(/[。；]?\s*若在 GitHub Pages 上[^。]*。?/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function renderRelayCandidates(list, boxId) {
   const box = $(boxId || 'relay-candidates');
   if (!box) return;
@@ -613,7 +620,7 @@ function renderRelayCandidates(list, boxId) {
       : c.state === 'ok'
         ? '可用 · ' + c.ms + ' ms · 读到 ' + c.rooms + ' 个房间'
         : c.state === 'fail'
-          ? '不可用 · ' + esc((c.note || '').slice(0, 110)) + (c.hint ? ' · ' + esc(c.hint) : '')
+          ? '不可用 · ' + esc(shortNote(c.note).slice(0, 72)) + (c.hint ? ' · ' + esc(c.hint) : '')
           : c.state === 'testing' ? '检测中…' : (c.hint ? esc(c.hint) : '未检测');
     const active = c.builtin
       ? chNow.mode === 'history'

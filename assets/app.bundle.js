@@ -566,8 +566,9 @@ async function post(path, payload, options = {}) {
     });
   } catch (err) {
     if (err && err.name === 'AbortError') throw err;
-    throw new Error('网络请求失败：' + (err && err.message ? err.message : err) +
-      '。若在 GitHub Pages 上使用，请先把「数据通道」切到自建中转（见页面底部说明）。');
+    const reason = err && err.message ? err.message : String(err);
+    const hint = '。中转没通：确认地址已启动且允许跨域';
+    throw new Error('网络请求失败：' + reason + hint);
   }
   if (!response.ok) throw new Error('接口返回 HTTP ' + response.status);
   const text = await response.text();
@@ -1931,6 +1932,13 @@ function relayCandidates() {
   return out;
 }
 
+function shortNote(msg) {
+  return String(msg || '')
+    .replace(/[。；]?\s*若在 GitHub Pages 上[^。]*。?/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function renderRelayCandidates(list, boxId) {
   const box = $(boxId || 'relay-candidates');
   if (!box) return;
@@ -1943,7 +1951,7 @@ function renderRelayCandidates(list, boxId) {
       : c.state === 'ok'
         ? '可用 · ' + c.ms + ' ms · 读到 ' + c.rooms + ' 个房间'
         : c.state === 'fail'
-          ? '不可用 · ' + esc((c.note || '').slice(0, 110)) + (c.hint ? ' · ' + esc(c.hint) : '')
+          ? '不可用 · ' + esc(shortNote(c.note).slice(0, 72)) + (c.hint ? ' · ' + esc(c.hint) : '')
           : c.state === 'testing' ? '检测中…' : (c.hint ? esc(c.hint) : '未检测');
     const active = c.builtin
       ? chNow.mode === 'history'

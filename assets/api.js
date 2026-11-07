@@ -319,8 +319,9 @@ async function post(path, payload, options = {}) {
     });
   } catch (err) {
     if (err && err.name === 'AbortError') throw err;
-    throw new Error('网络请求失败：' + (err && err.message ? err.message : err) +
-      '。若在 GitHub Pages 上使用，请先把「数据通道」切到自建中转（见页面底部说明）。');
+    const reason = err && err.message ? err.message : String(err);
+    const hint = '。中转没通：确认地址已启动且允许跨域';
+    throw new Error('网络请求失败：' + reason + hint);
   }
   if (!response.ok) throw new Error('接口返回 HTTP ' + response.status);
   const text = await response.text();
