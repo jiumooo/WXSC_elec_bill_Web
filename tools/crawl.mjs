@@ -303,6 +303,7 @@ async function main() {
   await writeJson(path.join(OUT, 'meta.json'), {
     version: 1,
     cutoff,
+    timezone: 'Asia/Shanghai',
     generatedAt: new Date().toISOString(),
     elapsedSeconds: Math.round((Date.now() - started) / 1000),
     xiaoquId: api.DEFAULT_XIAOQU,
