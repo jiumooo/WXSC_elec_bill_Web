@@ -5,7 +5,7 @@
  * 因此多人同时使用、各自查询自己的房间时互不影响。
  * ========================================================================== */
 
-export const APP_VERSION = '1.2.4';
+export const APP_VERSION = '1.2.5';
 
 /* ------------------------------------------------------------------ 常量 */
 const APPID = 'AABBCC01';
@@ -482,6 +482,20 @@ export function historyRoomFile(loudongNo, short) {
   });
 }
 
+/**
+ * 余额快照单独放一个文件（每楼一个）。
+ * 房间流水只在新充值时才变，而余额每天都在变——混在同一个文件里会让
+ * 2035 个房间文件每天全部重传（GitHub 每个文件一个 blob，差一字节就重传）。
+ */
+const balanceCache = new Map();
+export async function historyBalance(loudongNo, force) {
+  const key = String(loudongNo);
+  if (balanceCache.has(key) && !force) return balanceCache.get(key);
+  const data = await fetchJsonRetry(HISTORY_DIR + 'loudong/' + key + '/balance.json').catch(() => null);
+  if (data) balanceCache.set(key, data);
+  return data;
+}
+
 /** 历史数据模式下的“房间清单”，结构与真实接口一致 */
 async function historyRooms() {
   const meta = await historyMeta();
@@ -651,15 +665,22 @@ export async function queryRoom(room, options = {}) {
     const no = String(room.loudongNo || loudongNumber(room.loudongName) || room.loudongId || '');
     const short = room.roomNo || shortRoomCode(room.roomName, room.loudongName);
     const file = await historyRoomFile(no, short);
-    if (!file.balance) throw new Error('历史数据里这一间没有余额快照');
+    // 余额优先读 balance.json；旧结构（余额写在房间文件里）仍可回退
+    const bal = await historyBalance(no).catch(() => null);
+    const snap = (bal && bal.rooms && bal.rooms[short]) || file.balance || null;
+    if (!snap) throw new Error('历史数据里这一间没有余额快照');
+    let cutoff = (bal && bal.cutoff) || file.cutoff || '';
+    if (!cutoff) {
+      try { cutoff = (await historyMeta()).cutoff || ''; } catch { cutoff = ''; }
+    }
     return {
       xiaoqu: '历史数据',
-      used: Number(file.balance.used) || 0,
-      buy: Number(file.balance.buy) || 0,
-      left: Number(file.balance.left) || 0,
-      at: file.balance.at || file.cutoff,
+      used: Number(snap.used) || 0,
+      buy: Number(snap.buy) || 0,
+      left: Number(snap.left) || 0,
+      at: snap.at || cutoff,
       history: true,
-      cutoff: file.cutoff,
+      cutoff,
     };
   }
   const res = await post('/api/school/ele/third/room/get', {

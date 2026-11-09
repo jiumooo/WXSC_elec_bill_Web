@@ -2,7 +2,7 @@
 
 **[👉 点这里直接查：https://jiumooo.github.io/WXSC_elec_bill_Web/](https://jiumooo.github.io/WXSC_elec_bill_Web/)**
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.2.4-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-已部署-2ea44f?logo=github)](https://jiumooo.github.io/WXSC_elec_bill_Web/) [![版本](https://img.shields.io/badge/version-1.2.5-blue)](https://github.com/jiumooo/WXSC_elec_bill_Web)
 
 无锡科技职业技术学院（WXSC）电费查询的纯静态网页版：查当前房间余额、设置房间、按时间范围查充值记录，并把结果导出成 **Excel** 或 **Markdown**。
 
@@ -81,21 +81,28 @@
 ```
 data/index.json                      首屏用的合并索引：截止时间 + 每栋房间清单（页面只发 1 个请求）
 data/meta.json                       总索引：截止时间、楼栋数、房间数、记录数
-data/loudong/3/index.json            3 号楼的房间清单（每间的笔数/金额/余额）
-data/loudong/3/room-101.json         3 号楼 101 室：余额快照 + 逐笔充值 + 按人汇总
+data/loudong/3/index.json            3 号楼的房间清单（每间的笔数/金额）
+data/loudong/3/balance.json          3 号楼的余额快照（已用/已购/剩余，每天都变）
+data/loudong/3/room-101.json         3 号楼 101 室：逐笔充值 + 按人汇总
 ```
 
 > 为什么要 `data/index.json`：GitHub Pages（Fastly）对同一 IP 的**突发并发**请求会短暂返回 403，页面原来一次拉 `meta + 12 个楼栋索引` 会被限流；合并成一个 24 KB 的索引后首屏只发 1 个请求，且代码里带 403/429 退避重试。
 
-- 每个房间文件里都写明 `cutoff`（**数据截止时间**）与 `balance`（已用/已购/剩余），逐笔记录带 `buyer`（充值账号），并附 `persons`（每人笔数、金额）——所以「精细到个人」是离线也能看的。
-- 当前已收录：**12 栋 / 2035 间 / 295696 笔**，数据截止 **2026-11-07 03:51:58**（共 2048 个 JSON，约 28.6 MB）。
+- 数据按**变化频率**分层存放，这样每天更新只需重传少量文件：
+  - **每天都变**：`meta.json`、`index.json`、每栋一个 `balance.json`（余额天天在变）—— 共 14 个文件；
+  - **有房间新增充值才变**：`loudong/<楼栋>/index.json`；
+  - **只有这间房新增充值才变**：`loudong/<楼栋>/room-<房号>.json`（只装逐笔流水与按人汇总，不带时间戳、不带余额）。
+  - 逐笔记录带 `buyer`（充值账号）并附 `persons`（每人笔数、金额），所以「精细到个人」离线也能看。
+  - 如果旧结构把 `cutoff` 与 `balance` 写进每个房间文件，GitHub 上 2035 个 blob 会每天全部作废，一次推送要传 34 MB、耗时半小时。
+- 当前已收录：**12 栋 / 2035 间 / 295941 笔**，数据截止 **2026-11-10 01:49:51**（共 2061 个 JSON，约 33 MB）。
 - 页面在历史模式下**只读这些静态文件**，不发任何请求，因此人人可用、互不影响，也不会有任何中转依赖。
-- 重新抓取（在学校网络里跑，会写满 `data/`）：
+- 重新抓取（在学校网络里跑，会写满 `data/`；默认增量，只重写真正变化的文件）：
 
 ```bash
-node tools/crawl.mjs --concurrency 6           # 全量 2035 间，约 15 分钟
-node tools/crawl.mjs --loudong 3 --limit 20    # 只抓 3 号楼前 20 间，试用
-node tools/normalize-data.mjs                  # 把「房间号=完整编码」统一成房号，并重建两个索引
+node tools/crawl.mjs --concurrency 6           # 增量：2035 间约 14 分钟，房间文件基本不重写
+node tools/crawl.mjs --full --concurrency 6    # 全量重拉（改结构 / 怀疑数据坏了时用）
+node tools/crawl.mjs --loudong 3               # 只更新 3 号楼，其余楼栋的 meta 会自动合并
+node tools/normalize-data.mjs                  # 房号归一 + 余额迁移（幂等）
 node tools/build-index.mjs                     # 合并成 data/index.json（页面首屏只读它）
 ```
 
@@ -208,6 +215,13 @@ git push
 
 ## 更新日志
 
+### 1.2.5
+
+- **数据更新改成增量，推送不再重传全部**：过去每个房间文件里都写着 `cutoff`（抓取时间戳）和 `balance`（用电/余额），这两样每天都在变，于是 2035 个文件每天全部作废 —— 一次推送 34 MB / 半小时。现在按变化频率拆开：余额挪到每栋一个 `balance.json`，房间文件只留流水。**日更变化的文件从 2049 个降到「14 + 当天有新增充值的房间数」**，实测单栋增量抓 174 间时房间文件写入 0 个。
+- **抓取支持增量探测**：先拉最新 20 条与本地比对，没有新增就复用本地流水，不再重复下载整年记录（`--probe` 可调，`--full` 强制全量）。
+- **`queryRoom` 改读 `balance.json`**，旧结构（余额写在房间文件里）仍可回退，页面其它逻辑一行未改。
+- **局部抓取不再破坏总表**：`--loudong 3` 之前会把 `meta.json` 写成只剩这一栋，现在自动与已有 meta 合并。
+
 ### 1.2.4
 
 - **中转检测列表的第一行改成「历史数据（离线快照，必可用）」**：以前点「自动检测可用中转」在真实网络下经常 5 条全红（公共代理确实都失效了），看着像功能坏了。现在离线台账直接作为第一行的候选，标「恒可用 · 离线」，点它右边的「用它查询」立即切过去；检测结果也会写明「也可以直接用第一行的历史数据」。
@@ -261,9 +275,10 @@ assets/app.js               页面控制器（状态、渲染、事件）
 assets/app.bundle.js        上面 4 个模块合成的单文件（页面实际加载的就是它）
 data/index.json             首屏合并索引（截止时间 + 每栋房间清单，24 KB）
 data/meta.json              历史台账总索引（截止时间 / 楼栋 / 房间 / 记录数）
-data/loudong/<楼栋>/index.json      该楼栋房间清单
-data/loudong/<楼栋>/room-<房号>.json 单房间：余额快照 + 逐笔 + 每人汇总
-tools/crawl.mjs             抓取真实接口 → 生成本地台账
+data/loudong/<楼栋>/index.json      该楼栋房间清单（房号 / 笔数 / 金额）
+data/loudong/<楼栋>/balance.json    该楼栋余额快照（每天变，只有 12 个文件）
+data/loudong/<楼栋>/room-<房号>.json 单房间：逐笔 + 每人汇总（新增充值才变）
+tools/crawl.mjs             抓取真实接口 → 生成本地台账（默认增量，--full 全量）
 tools/normalize-data.mjs    规范化房号 + 重建两级索引
 tools/build-index.mjs       生成 data/index.json
 tools/bundle.mjs            打单文件 bundle + 内联 CSS（改完 JS/CSS 必须跑一次）

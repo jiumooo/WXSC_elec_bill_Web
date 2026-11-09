@@ -147,7 +147,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === '/health') {
-      sendJson(res, 200, { ok: true, service: 'WXSC_elec_bill_Web relay (local)', version: '1.2.4', upstream: UPSTREAM });
+      sendJson(res, 200, { ok: true, service: 'WXSC_elec_bill_Web relay (local)', version: '1.2.5', upstream: UPSTREAM });
       return;
     }
     if (url.pathname.startsWith(PREFIX)) {

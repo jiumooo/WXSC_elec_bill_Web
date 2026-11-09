@@ -65,7 +65,7 @@ export default {
       return json({
         ok: true,
         service: 'WXSC_elec_bill_Web relay',
-        version: '1.2.4',
+        version: '1.2.5',
         upstream: (env && env.UPSTREAM_HOST) || DEFAULT_UPSTREAM,
         note: '无状态转发，不保存任何请求或响应数据',
       }, 200, request, env);

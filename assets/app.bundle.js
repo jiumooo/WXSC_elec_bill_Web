@@ -259,7 +259,7 @@ function buildXlsx(sheets) {
  * 不依赖任何第三方库，也不依赖任何后端会话 —— 每次请求都自带完整的房间参数，
  * 因此多人同时使用、各自查询自己的房间时互不影响。
  * ========================================================================== */
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '1.2.5';
 
 /* ------------------------------------------------------------------ 常量 */
 const APPID = 'AABBCC01';
@@ -726,6 +726,20 @@ function historyRoomFile(loudongNo, short) {
   });
 }
 
+/**
+ * 余额快照单独放一个文件（每楼一个）。
+ * 房间流水只在新充值时才变，而余额每天都在变——混在同一个文件里会让
+ * 2035 个房间文件每天全部重传（GitHub 每个文件一个 blob，差一字节就重传）。
+ */
+const balanceCache = new Map();
+async function historyBalance(loudongNo, force) {
+  const key = String(loudongNo);
+  if (balanceCache.has(key) && !force) return balanceCache.get(key);
+  const data = await fetchJsonRetry(HISTORY_DIR + 'loudong/' + key + '/balance.json').catch(() => null);
+  if (data) balanceCache.set(key, data);
+  return data;
+}
+
 /** 历史数据模式下的“房间清单”，结构与真实接口一致 */
 async function historyRooms() {
   const meta = await historyMeta();
@@ -892,15 +906,22 @@ async function queryRoom(room, options = {}) {
     const no = String(room.loudongNo || loudongNumber(room.loudongName) || room.loudongId || '');
     const short = room.roomNo || shortRoomCode(room.roomName, room.loudongName);
     const file = await historyRoomFile(no, short);
-    if (!file.balance) throw new Error('历史数据里这一间没有余额快照');
+    // 余额优先读 balance.json；旧结构（余额写在房间文件里）仍可回退
+    const bal = await historyBalance(no).catch(() => null);
+    const snap = (bal && bal.rooms && bal.rooms[short]) || file.balance || null;
+    if (!snap) throw new Error('历史数据里这一间没有余额快照');
+    let cutoff = (bal && bal.cutoff) || file.cutoff || '';
+    if (!cutoff) {
+      try { cutoff = (await historyMeta()).cutoff || ''; } catch { cutoff = ''; }
+    }
     return {
       xiaoqu: '历史数据',
-      used: Number(file.balance.used) || 0,
-      buy: Number(file.balance.buy) || 0,
-      left: Number(file.balance.left) || 0,
-      at: file.balance.at || file.cutoff,
+      used: Number(snap.used) || 0,
+      buy: Number(snap.buy) || 0,
+      left: Number(snap.left) || 0,
+      at: snap.at || cutoff,
       history: true,
-      cutoff: file.cutoff,
+      cutoff,
     };
   }
   const res = await post('/api/school/ele/third/room/get', {
@@ -1059,7 +1080,7 @@ function sumAmount(items) {
 
 
 /* api 命名空间（app.js 里用 api.xxx） */
-const api = { utf8Encode, utf8Decode, md5, normalizeMode, normalizeRelayMode, normalizeRelayBase, relayUrl, getChannel, setChannel, loadRelayRegistry, signBody, probeRelay, shortRoomCode, historyIndex, historyMeta, historyLoudong, historyRoomFile, loudongOptions, roomOptions, allRooms, loudongNumber, resolveRoom, describeRoom, queryRoom, fetchRecharge, toLocalInput, toApiTime, quickRange, yearStart, rangeLabel, filterItems, summarize, sumAmount, APP_VERSION, UPSTREAM, DEFAULT_XIAOQU, DEFAULT_DATASOURCE, CHANNELS, PUBLIC_RELAYS };
+const api = { utf8Encode, utf8Decode, md5, normalizeMode, normalizeRelayMode, normalizeRelayBase, relayUrl, getChannel, setChannel, loadRelayRegistry, signBody, probeRelay, shortRoomCode, historyIndex, historyMeta, historyLoudong, historyRoomFile, historyBalance, loudongOptions, roomOptions, allRooms, loudongNumber, resolveRoom, describeRoom, queryRoom, fetchRecharge, toLocalInput, toApiTime, quickRange, yearStart, rangeLabel, filterItems, summarize, sumAmount, APP_VERSION, UPSTREAM, DEFAULT_XIAOQU, DEFAULT_DATASOURCE, CHANNELS, PUBLIC_RELAYS };
 
 /* ---- assets/export.js ---- */
 /* ==========================================================================
