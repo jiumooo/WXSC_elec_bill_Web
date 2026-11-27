@@ -228,6 +228,9 @@ body.no-scroll{overflow:hidden}
 .gstep .hint:first-of-type{margin-top:0}
 
 /* ---------------- 其他 ---------------- */
+.hits{display:flex;gap:6px;justify-content:center;align-items:baseline;color:var(--muted);
+  font-size:12px;padding:10px 0 0}
+.hits b{color:var(--fg);font-weight:650;font-variant-numeric:tabular-nums;font-size:13px}
 .footnote{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;color:var(--muted);
   font-size:11.5px;padding:6px 0 10px}
 .footnote a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
@@ -326,7 +329,7 @@ body.no-scroll{overflow:hidden}
       </div>
     </div>
     <div class="head-actions">
-      <span class="chip" id="chip-version">v1.2.5</span>
+      <span class="chip" id="chip-version">v1.2.6</span>
       <button class="btn mini ghost" id="btn-open-room" type="button" title="楼栋号 / 房间号 / 校区 / 数据源">房间设置</button>
       <button class="btn mini ghost" id="btn-open-channel" type="button" title="取数通道与中转部署说明">中转通道</button>
     </div>
@@ -422,8 +425,9 @@ body.no-scroll{overflow:hidden}
     <div class="hint" id="q-hint">导出的是当前这次查询的结果，导出的表就是你正在看的那张表，不会再请求一次接口。</div>
   </section>
 
+  <div class="hits" id="hits" hidden>已查询 <b id="hits-n">—</b> 人次</div>
   <div class="footnote">
-    <span id="foot-version">WXSC_elec_bill_Web v1.2.5</span>
+    <span id="foot-version">WXSC_elec_bill_Web v1.2.6</span>
     <span>·</span>
     <span>纯前端，无后端会话，查询参数只携带你自己填的房间</span>
     <span>·</span>

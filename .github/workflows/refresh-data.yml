@@ -5,7 +5,7 @@ name: Refresh history data
 # 所以部署要写在本 workflow 里，不能指望 pages.yml 被自动触发。
 on:
   schedule:
-    - cron: '17 19 * * *'   # UTC 19:17 = 北京时间 03:17
+    - cron: '0 17 * * *'    # UTC 17:00 = 北京时间 01:00
   workflow_dispatch:
     inputs:
       loudong:

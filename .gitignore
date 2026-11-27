@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+
+# 本机中转的访客计数（本地产生，不入库）
+relay/.count.json

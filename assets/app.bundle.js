@@ -259,7 +259,7 @@ function buildXlsx(sheets) {
  * 不依赖任何第三方库，也不依赖任何后端会话 —— 每次请求都自带完整的房间参数，
  * 因此多人同时使用、各自查询自己的房间时互不影响。
  * ========================================================================== */
-const APP_VERSION = '1.2.5';
+const APP_VERSION = '1.2.6';
 
 /* ------------------------------------------------------------------ 常量 */
 const APPID = 'AABBCC01';
@@ -1487,6 +1487,9 @@ function renderChips() {
           ? '当前：直连 pay.wxstc.cn —— GitHub Pages 上会被浏览器拦，请点上面的「自动检测可用中转」，或直接切到历史数据'
           : '当前：直连 pay.wxstc.cn（需要同源部署或反向代理）';
   }
+  // 历史模式下「刷新余额」只是重读本地快照，按钮文案要说实话
+  const rb = $('btn-refresh-room');
+  if (rb) rb.textContent = ch.mode === 'history' ? '重读快照' : '刷新余额';
 }
 
 /* ------------------------------------------------------------------ 余额 */
@@ -1706,18 +1709,24 @@ function setRange(kind) {
 async function loadBalance(options = {}) {
   if (!S.room) { toast('先设置房间'); return; }
   const btn = $('btn-refresh-room');
-  if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
+  const isHistory = api.getChannel().mode === 'history';
+  const idle = isHistory ? '重读快照' : '刷新余额';
+  if (btn) { btn.disabled = true; btn.textContent = isHistory ? '读取中…' : '刷新中…'; }
   try {
     S.balance = await api.queryRoom(S.room, options);
     renderBalance();
-    if (options.silent !== true) toast('余额已更新');
+    if (options.silent !== true) {
+      toast(isHistory
+        ? '已重读本地快照（截至 ' + (S.cutoff || S.balance.at || '—') + '）'
+        : '余额已更新');
+    }
   } catch (err) {
     S.balance = null;
     renderBalance();
     toast('取余额失败：' + (err && err.message ? err.message : err), 4200);
     revealChannel(err);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '刷新余额'; }
+    if (btn) { btn.disabled = false; btn.textContent = idle; }
   }
 }
 
@@ -1734,6 +1743,7 @@ async function runQuery(options = {}) {
     applyItems();
     if (!S.all.length) toast('这个房间还没有充值记录');
     else toast('共 ' + S.items.length + ' 笔，' + S.summary.length + ' 个账号', 2000);
+    visitTap(); // 查询成功记一次「已查询人次」（同一设备只记一次）
   } catch (err) {
     toast('查询失败：' + (err && err.message ? err.message : err), 4600);
     revealChannel(err);
@@ -2709,13 +2719,19 @@ async function boot() {
   const e2init = $('in-enroll2');
   if (e2init) e2init.value = enrollYear();
 
-  let kind = String(store.get(KEY.range, 'month') || 'month');
+  // 默认区间：填过入学年份 → 开学至今；没填 → 全部。
+  // （旧版默认 'month'，但页面上「本月」按钮在 1.2.3 已换成「开学至今」，不能再默认它）
+  let kind = String(store.get(KEY.range, '') || '');
+  if (!kind) kind = enrollYear() ? 'enroll' : 'all';
+  if (kind === 'month') kind = 'all';            // 兼容旧链接 / 旧 localStorage
+  if (kind === 'enroll' && !enrollRange()) kind = 'all';
+  store.set(KEY.range, kind);
   const er = kind === 'enroll' ? enrollRange() : null;
-  if (kind === 'enroll' && !er) { kind = 'month'; store.set(KEY.range, 'month'); }
-  const initial = er || api.quickRange(kind === 'enroll' ? 'month' : kind);
+  const initial = er || api.quickRange(kind);
   $('in-start').value = initial.start;
   $('in-end').value = initial.end;
   rangeFromInputs();
+  syncRangeButtons();
 
   bind();
   renderRecent();
@@ -2750,6 +2766,108 @@ async function boot() {
 
   // 新用户（没有房间设置、也没看完引导）默认弹出引导
   if (forced || (!hidden && !(done && done.done))) guideOpen();
+
+  visitShow();
+}
+
+/* ---------------------------------------------------------------- 访客计数 */
+// 页脚「已查询 N 人次」的跨设备累计：
+//  - 默认走 abacus 免费计数器（GET 自增、CORS 允许、无需注册），键 wxsc-elec/page-visits；
+//  - 同一台设备只计一次（localStorage 记住本机 deviceId 是否已计入），换设备/换浏览器各算一次；
+//  - 若用本机/自建中转（relay 的 /count 接口），优先走它；也可用 ?count=<基址> 指到自己的计数服务。
+const VISIT = {
+  base: 'https://abacus.jasoncameron.dev',
+  ns: 'wxsc-elec',
+  key: 'page-visits',
+  deviceKey: 'wxsc.elec.device.v1',
+  countedKey: 'wxsc.elec.counted.v1',
+  cacheKey: 'wxsc.elec.visits.v1',
+  paramKey: 'count',
+};
+const LOCAL_RE = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/i;
+
+function visitIsAbacus(base) { return /abacus\.jasoncameron\.dev/.test(base); }
+
+function visitBase() {
+  const q = new URLSearchParams(location.search).get(VISIT.paramKey);
+  if (q) return String(q).replace(/\/+$/, '');
+  const ch = api.getChannel();
+  if (ch.mode === 'relay' && ch.relayBase
+      && (LOCAL_RE.test(ch.relayBase) || ch.relayBase.startsWith(location.origin))) {
+    return ch.relayBase.replace(/\/+$/, '') + '/count';
+  }
+  return VISIT.base;
+}
+
+function visitDevice() {
+  let id = store.get(VISIT.deviceKey, '');
+  if (id) return id;
+  id = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  store.set(VISIT.deviceKey, id);
+  return id;
+}
+
+function visitPaint(n) {
+  const box = $('hits');
+  const num = $('hits-n');
+  if (!box || !num) return;
+  box.hidden = false;
+  num.textContent = (typeof n === 'number' && isFinite(n)) ? n.toLocaleString('zh-CN') : '—';
+}
+
+function visitRead() {
+  const base = visitBase();
+  const url = visitIsAbacus(base) ? base + '/get/' + VISIT.ns + '/' + VISIT.key : base;
+  return fetch(url, { cache: 'no-store' }).then((r) => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then((j) => {
+    const n = typeof j.value === 'number' ? j.value : (typeof j.count === 'number' ? j.count : null);
+    if (typeof n === 'number') store.set(VISIT.cacheKey, n);
+    return n;
+  });
+}
+
+function visitHit() {
+  const base = visitBase();
+  const abacus = visitIsAbacus(base);
+  const url = abacus ? base + '/hit/' + VISIT.ns + '/' + VISIT.key : base;
+  const opts = { cache: 'no-store', method: abacus ? 'GET' : 'POST' };
+  if (!abacus) opts.headers = { 'X-WXSC-Device': visitDevice() };
+  return fetch(url, opts).then((r) => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then((j) => {
+    const n = typeof j.value === 'number' ? j.value : (typeof j.count === 'number' ? j.count : null);
+    if (typeof n === 'number') store.set(VISIT.cacheKey, n);
+    return n;
+  });
+}
+
+// 查询成功后调用：同一设备只加一次，加过之后只刷新数字
+function visitTap() {
+  try {
+    const dev = visitDevice();
+    if (store.get(VISIT.countedKey, '') === dev) {
+      visitRead().then(visitPaint).catch(() => {});
+      return;
+    }
+    visitHit().then((n) => {
+      store.set(VISIT.countedKey, dev);
+      visitPaint(n);
+    }).catch(() => {});
+  } catch (e) { /* 计数失败绝不影响查询 */ }
+}
+
+// 首屏只读数字（不增加），失败就显示缓存或「—」
+function visitShow() {
+  const cached = store.get(VISIT.cacheKey, null);
+  if (typeof cached === 'number') visitPaint(cached);
+  visitRead().then(visitPaint).catch(() => {
+    if (typeof cached !== 'number') visitPaint(null);
+  });
 }
 
 boot();

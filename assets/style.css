@@ -218,6 +218,9 @@ body.no-scroll{overflow:hidden}
 .gstep .hint:first-of-type{margin-top:0}
 
 /* ---------------- 其他 ---------------- */
+.hits{display:flex;gap:6px;justify-content:center;align-items:baseline;color:var(--muted);
+  font-size:12px;padding:10px 0 0}
+.hits b{color:var(--fg);font-weight:650;font-variant-numeric:tabular-nums;font-size:13px}
 .footnote{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;color:var(--muted);
   font-size:11.5px;padding:6px 0 10px}
 .footnote a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}

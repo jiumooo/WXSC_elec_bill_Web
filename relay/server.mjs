@@ -18,7 +18,7 @@
  */
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -48,7 +48,7 @@ const MIME = {
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-WXSC-Device');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -61,6 +61,44 @@ function sendJson(res, status, body) {
     'Content-Length': Buffer.byteLength(text),
   });
   res.end(text);
+}
+
+/* ------------------------------------------------------------------ 计数
+ * 页脚「已查询 N 人次」的自建版：页面用本机中转时改打这里的 /count，
+ * 数据只存在本机（relay/.count.json）；同一设备只加一次（前端用 X-WXSC-Device 头）。
+ */
+const COUNT_FILE = path.join(HERE, '.count.json');
+let countState = null;
+
+async function countLoad() {
+  if (countState) return countState;
+  try {
+    const j = JSON.parse(await readFile(COUNT_FILE, 'utf8'));
+    countState = { value: Number(j.value) || 0, devices: Array.isArray(j.devices) ? j.devices : [] };
+  } catch {
+    countState = { value: 0, devices: [] };
+  }
+  return countState;
+}
+
+async function countSave() {
+  try { await writeFile(COUNT_FILE, JSON.stringify(countState), 'utf8'); } catch { /* 只读目录就只在内存里记 */ }
+}
+
+async function handleCount(req, res) {
+  const st = await countLoad();
+  if (req.method === 'POST') {
+    const dev = String(req.headers['x-wxsc-device'] || '').slice(0, 64);
+    if (!dev || !st.devices.includes(dev)) {
+      if (dev) {
+        st.devices.push(dev);
+        if (st.devices.length > 5000) st.devices.shift();
+      }
+      st.value += 1;
+      await countSave();
+    }
+  }
+  sendJson(res, 200, { value: st.value });
 }
 
 async function proxy(req, res, url) {
@@ -147,7 +185,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === '/health') {
-      sendJson(res, 200, { ok: true, service: 'WXSC_elec_bill_Web relay (local)', version: '1.2.5', upstream: UPSTREAM });
+      sendJson(res, 200, { ok: true, service: 'WXSC_elec_bill_Web relay (local)', version: '1.2.6', upstream: UPSTREAM });
+      return;
+    }
+    if (url.pathname === '/count') {
+      await handleCount(req, res);
       return;
     }
     if (url.pathname.startsWith(PREFIX)) {
